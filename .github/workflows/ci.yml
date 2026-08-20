@@ -1,0 +1,135 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUSTUP_MAX_RETRIES: "10"
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Lint and format check
+  # -------------------------------------------------------------------------
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Doc
+        run: cargo doc --no-deps --all-features
+
+  # -------------------------------------------------------------------------
+  # Build and test on x86_64 Linux
+  # -------------------------------------------------------------------------
+  test:
+    name: Test (ubuntu-latest, x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - name: Build
+        run: cargo build --verbose --all-features
+      - name: Test
+        run: cargo test --verbose --all-features
+      - name: Test (no features)
+        run: cargo test --verbose
+      - name: Doc tests
+        run: cargo test --doc --all-features
+
+  # -------------------------------------------------------------------------
+  # Cross-compile smoke test for aarch64 (Jetson)
+  # -------------------------------------------------------------------------
+  cross:
+    name: Cross-compile (aarch64-unknown-linux-gnu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Cross build (default features)
+        run: cross build --target aarch64-unknown-linux-gnu
+      - name: Cross build (all features)
+        run: cross build --target aarch64-unknown-linux-gnu --all-features
+
+  # -------------------------------------------------------------------------
+  # Coverage
+  # -------------------------------------------------------------------------
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Run coverage
+        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./cobertura.xml
+          fail_ci_if_error: false
+
+  # -------------------------------------------------------------------------
+  # Examples validation
+  # -------------------------------------------------------------------------
+  examples:
+    name: Validate example sheets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - name: Validate each example
+        run: |
+          set -e
+          for f in examples/*.yaml; do
+            echo "Validating $f"
+            cargo run --quiet -- validate "$f"
+          done
+
+  # -------------------------------------------------------------------------
+  # MSRV check
+  # -------------------------------------------------------------------------
+  msrv:
+    name: MSRV (1.75)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+      - name: Build (no features)
+        run: cargo build

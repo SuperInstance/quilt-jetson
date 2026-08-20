@@ -1,0 +1,49 @@
+# Build artifacts
+target/
+**/target/
+
+# Cargo lockfile for libraries
+# (Keep Cargo.lock for binaries; comment out if you want git to ignore it)
+# Cargo.lock
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.log.*
+
+# Local env
+.env
+.env.local
+
+# Local SQLite databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# ONNX / TensorRT models (too big for git)
+*.onnx
+*.engine
+*.trt
+
+# Coverage
+coverage/
+cobertura.xml
+*.lcov
+tarpaulin-report.html
+
+# Build outputs
+dist/
+build/
+out/

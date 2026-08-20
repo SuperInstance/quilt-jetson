@@ -1,0 +1,76 @@
+# ROS2 Publisher example.
+#
+# This sheet:
+#   1. Subscribes to a ROS2 /cmd_vel topic.
+#   2. Computes a smoothed velocity in a formula.
+#   3. Publishes the result back to /cmd_vel_smoothed.
+#
+# The `ros2_bridge` is the pure-Rust ROS2 client (behind the
+# `--features ros2` feature flag). Without the feature, the
+# bridge runs in stub mode and logs what it would do.
+#
+# To run on a Jetson with ROS2 installed:
+#   cargo run --features ros2 -- serve examples/ros2-publisher.yaml
+#
+# Without ROS2 (stub mode):
+#   cargo run -- serve examples/ros2-publisher.yaml
+
+id: ros2-publisher
+title: ROS2 Cmd-Vel Publisher
+description: |
+  Subscribe to /cmd_vel, smooth it, and publish to /cmd_vel_smoothed.
+  Demonstrates the federation pattern between a `sensor` cell (inbound
+  ROS2) and an `io` cell (outbound ROS2).
+version: 0.1.0
+
+axes:
+  rows: { name: topic }
+  cols: { name: capability }
+
+cells:
+  # Inbound — subscribe to /cmd_vel.
+  - id: cmd_vel.in
+    kind: sensor
+    source: ros2:/cmd_vel:geometry_msgs/msg/Twist
+    rate: 50
+    unit: "twist"
+    description: "Inbound /cmd_vel topic (ROS2)."
+
+  # The "twist" has linear.x and angular.z. Pull them out.
+  - id: cmd_vel.linear.x
+    kind: formula
+    expr: =cmd_vel.in.linear.x
+    unit: m/s
+    description: "Linear velocity from /cmd_vel."
+
+  - id: cmd_vel.angular.z
+    kind: formula
+    expr: =cmd_vel.in.angular.z
+    unit: rad/s
+    description: "Angular velocity from /cmd_vel."
+
+  # Outbound — publish to /cmd_vel_smoothed.
+  - id: cmd_vel.out
+    kind: io
+    port: ros2:/cmd_vel_smoothed:geometry_msgs/msg/Twist
+    direction: out
+    description: "Outbound smoothed /cmd_vel topic (ROS2)."
+
+  # A listener that fires when the velocity is high.
+  - id: alert.high_speed
+    kind: listener
+    watch: [cmd_vel.linear.x]
+    condition: "abs(cmd_vel.linear.x) > 1.5"
+    action: log.high_speed
+    description: "Fires when |velocity| > 1.5 m/s."
+
+  - id: log.high_speed
+    kind: program
+    code: |
+      const v = await runtime.get("cmd_vel.linear.x");
+      return {
+        severity: "warn",
+        message: `High speed: ${v.data} m/s`,
+        timestamp: Date.now(),
+      };
+    description: "Logs a warning for high speed."

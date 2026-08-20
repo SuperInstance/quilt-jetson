@@ -1,0 +1,95 @@
+# Vision detection example.
+#
+# This sheet:
+#   1. Reads a camera frame (sensor cell, source = /dev/video0).
+#   2. Runs YOLOv8 detection via TensorRT (api cell with
+#      `tensorrt://...` endpoint).
+#   3. Logs the detections via an API call to a logging endpoint.
+#
+# The `tensorrt://` and `onnx://` URL schemes are routed to the
+# vision cell evaluator, which uses TensorRT or ONNX Runtime to
+# run the model. Without the `vision-onnx` feature, the evaluator
+# returns a synthetic result so you can develop the rest of the
+# sheet without a GPU.
+#
+# To run with real TensorRT:
+#   cargo run --features vision-onnx -- serve examples/vision-detect.yaml
+
+id: vision-detect
+title: Vision Obstacle Detection
+description: |
+  Camera → YOLOv8 detect → log detections.
+  Demonstrates the `tensorrt://` API URL scheme and the vision
+  cell evaluator.
+version: 0.1.0
+
+axes:
+  rows: { name: model }
+  cols: { name: capability }
+
+cells:
+  # The camera — a sensor cell with source pointing to /dev/video0.
+  # In a real deployment, an adapter pushes frames into this cell.
+  - id: camera.frame
+    kind: sensor
+    source: camera:/dev/video0
+    rate: 30
+    description: "Camera frames from /dev/video0 (V4L2)."
+
+  # The vision cell — runs YOLOv8 on the camera frame.
+  - id: vision.obstacles
+    kind: api
+    endpoint: tensorrt:///opt/models/yolov8n.engine
+    headers:
+      task: detect
+      conf_threshold: "0.5"
+      iou_threshold: "0.45"
+      classes: "0,1,2"  # person, bicycle, car
+    description: |
+      Run YOLOv8n on the camera frame. Returns a JSON object with
+      `detections: [...]`, where each detection has a `bbox`,
+      `class_id`, `class_name`, and `confidence`.
+
+  # A formula that counts the number of detected obstacles.
+  - id: vision.count
+    kind: formula
+    expr: =vision.obstacles.detections.len()
+    unit: count
+    description: "Number of detected obstacles in the frame."
+
+  # A formula that filters to "person" only.
+  - id: vision.person_count
+    kind: formula
+    expr: |
+      vision.obstacles.detections
+        .filter(d => d.class_name == "person")
+        .len()
+    unit: count
+    description: "Number of detected persons in the frame."
+
+  # A listener that fires when a person is detected.
+  - id: alert.person_detected
+    kind: listener
+    watch: [vision.person_count]
+    condition: "vision.person_count > 0"
+    action: log.person_detected
+    description: "Fires when at least one person is detected."
+
+  - id: log.person_detected
+    kind: program
+    code: |
+      const count = await runtime.get("vision.person_count");
+      return {
+        severity: "info",
+        message: `Person detected (count=${count.data})`,
+        timestamp: Date.now(),
+      };
+    description: "Logs when a person is detected."
+
+  # An io cell that writes detections to a local MQTT broker for
+  # downstream consumers.
+  - id: io.mqtt.detections
+    kind: io
+    port: mqtt://localhost:1883/quilt/vision/detections
+    direction: out
+    description: "Publishes detections to a local MQTT topic."

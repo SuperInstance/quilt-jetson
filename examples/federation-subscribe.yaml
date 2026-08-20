@@ -1,0 +1,97 @@
+# Federation example.
+#
+# This sheet subscribes to a remote cell on another tier of the
+# Quilt federation — in this case, an ESP32 sensor on a boat. The
+# remote cell is exposed as a local `sensor` cell so the rest of
+# the sheet can treat it like any other sensor.
+#
+# In a real deployment, the federation client would resolve
+# `quilt://esp32-fleet/boat#sensor.heading` to a WebSocket
+# subscription on the ESP32's HTTP API, and forward updates to the
+# local cell.
+#
+# To run:
+#   quilt-jetson serve examples/federation-subscribe.yaml
+
+id: federation-subscribe
+title: Subscribe to a Remote ESP32 Cell
+description: |
+  Subscribe to `quilt://esp32-fleet/boat#sensor.heading` and expose
+  the value as a local cell. Then add a listener that fires when
+  the heading is "off course".
+version: 0.1.0
+
+axes:
+  rows: { name: source }
+  cols: { name: capability }
+
+cells:
+  # The local proxy for the remote cell.
+  - id: remote.heading
+    kind: sensor
+    source: quilt://esp32-fleet/boat#sensor.heading
+    rate: 10
+    unit: degrees
+    default: 0
+    description: |
+      Live heading from the ESP32 boat. The federation client
+      resolves the URI and subscribes via WebSocket. Without a
+      real ESP32 fleet reachable, the cell stays at its `default`
+      (0 degrees).
+
+  # A second remote cell — the boat's current speed.
+  - id: remote.speed
+    kind: sensor
+    source: quilt://esp32-fleet/boat#sensor.speed
+    rate: 5
+    unit: knots
+    default: 0
+    description: "Live speed from the ESP32 boat."
+
+  # The desired heading — set locally (e.g. by the autopilot).
+  - id: desired.heading
+    kind: value
+    value: 180
+    unit: degrees
+    description: "Desired heading."
+
+  # The heading error — what we want to be zero.
+  - id: heading.error
+    kind: formula
+    expr: "=((desired.heading - remote.heading + 540) % 360) - 180"
+    unit: degrees
+    description: "Signed shortest-path error (positive = turn right)."
+
+  # The total state — a single object that downstream consumers
+  # can subscribe to in one call.
+  - id: state
+    kind: formula
+    expr: |
+      #{
+        heading: remote.heading,
+        speed: remote.speed,
+        desired: desired.heading,
+        error: heading.error,
+        ts: Date.now(),
+      }
+    description: "Aggregated state object."
+
+  # A listener that fires when the boat is more than 30 degrees
+  # off course.
+  - id: alert.off_course
+    kind: listener
+    watch: [heading.error]
+    condition: "abs(heading.error) > 30"
+    action: log.off_course
+    description: "Fires when |heading error| > 30°."
+
+  - id: log.off_course
+    kind: program
+    code: |
+      const e = await runtime.get("heading.error");
+      return {
+        severity: "warn",
+        message: `Off course by ${e.data}°`,
+        timestamp: Date.now(),
+      };
+    description: "Logs an off-course event."

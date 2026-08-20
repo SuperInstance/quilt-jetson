@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quilt Jetson</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg-elev: #131826;
+    --bg-elev2: #1a2032;
+    --fg: #e0e6f0;
+    --fg-dim: #8a92a6;
+    --accent: #4ec9b0;
+    --accent-2: #569cd6;
+    --warn: #ce9178;
+    --error: #f48771;
+    --border: #2a3142;
+    --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  header {
+    background: linear-gradient(135deg, var(--bg-elev) 0%, var(--bg-elev2) 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  header .badge {
+    background: var(--bg-elev2);
+    color: var(--accent-2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    margin-left: 8px;
+  }
+  header .meta {
+    font-size: 12px;
+    color: var(--fg-dim);
+    font-family: var(--font-mono);
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    height: calc(100vh - 57px);
+  }
+  .sidebar {
+    background: var(--bg-elev);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+  }
+  .main {
+    overflow-y: auto;
+    padding: 24px;
+  }
+  h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-dim);
+    margin: 16px 0 8px;
+    font-weight: 600;
+  }
+  h2:first-child { margin-top: 0; }
+  .cell-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .cell-list li {
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg);
+    transition: background 0.1s;
+  }
+  .cell-list li:hover {
+    background: var(--bg-elev2);
+  }
+  .cell-list li.active {
+    background: var(--bg-elev2);
+    border-left: 2px solid var(--accent);
+  }
+  .cell-list li .kind {
+    color: var(--fg-dim);
+    font-size: 10px;
+    margin-left: 6px;
+  }
+  .cell-list li .value {
+    color: var(--accent);
+    font-size: 11px;
+    float: right;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cell-list li .error {
+    color: var(--error);
+  }
+  .panel {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .panel h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--accent-2);
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .kv .k {
+    color: var(--fg-dim);
+  }
+  .kv .v {
+    color: var(--fg);
+    word-break: break-all;
+  }
+  pre.json {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow-x: auto;
+    color: var(--fg);
+    margin: 0;
+  }
+  textarea.editor {
+    width: 100%;
+    min-height: 300px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    resize: vertical;
+  }
+  button {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-right: 8px;
+  }
+  button:hover {
+    background: #5fd9c0;
+  }
+  button.secondary {
+    background: var(--bg-elev2);
+    color: var(--fg);
+  }
+  button.secondary:hover {
+    background: var(--border);
+  }
+  .toolbar {
+    margin-bottom: 12px;
+    display: flex;
+    gap: 8px;
+  }
+  .empty {
+    color: var(--fg-dim);
+    text-align: center;
+    padding: 32px;
+    font-style: italic;
+  }
+  .status {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-right: 4px;
+  }
+  .status.ready { background: var(--accent); }
+  .status.error { background: var(--error); }
+  .status.idle { background: var(--fg-dim); }
+  .status.computing { background: var(--warn); }
+  .status.stale { background: var(--warn); }
+  .conn {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--error);
+    margin-right: 4px;
+  }
+  .conn.live { background: var(--accent); }
+  .history-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 100px;
+    gap: 8px;
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+  }
+  .history-row:nth-child(even) {
+    background: var(--bg-elev2);
+  }
+  .history-row .ts { color: var(--fg-dim); }
+  .history-row .v { color: var(--fg); }
+  .history-row .s { color: var(--accent-2); }
+  .ascii-banner {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-size: 10px;
+    line-height: 1.1;
+    white-space: pre;
+    margin: 0 0 8px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Quilt Jetson <span class="badge" id="tier">edge-mid</span></h1>
+    <div class="meta">
+      <span class="conn" id="conn-indicator"></span>
+      <span id="conn-status">disconnected</span> ·
+      <span id="cell-count">0</span> cells ·
+      <span id="engine-id">…</span>
+    </div>
+  </div>
+  <div>
+    <button class="secondary" onclick="refreshCells()">↻ Refresh</button>
+    <button class="secondary" onclick="toggleEditor()">Edit YAML</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h2>Cells</h2>
+    <ul class="cell-list" id="cell-list">
+      <li class="empty">No cells loaded</li>
+    </ul>
+  </aside>
+
+  <main class="main">
+    <div id="editor-panel" class="panel" style="display:none;">
+      <h3>YAML Editor</h3>
+      <textarea id="yaml-editor" class="editor" placeholder="Paste a Quilt sheet YAML here..."></textarea>
+      <div class="toolbar" style="margin-top:12px;">
+        <button onclick="loadYaml()">Load Sheet</button>
+        <button class="secondary" onclick="toggleEditor()">Cancel</button>
+      </div>
+    </div>
+
+    <div id="cell-detail" class="panel">
+      <h3>Select a cell</h3>
+      <div class="empty">Click a cell in the sidebar to see its value, history, and effects.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+  let selectedCell = null;
+  let ws = null;
+  let cells = {};
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function statusClass(status) {
+    return `status ${status || 'idle'}`;
+  }
+
+  function shortValue(v) {
+    if (v === null || v === undefined) return '—';
+    if (typeof v === 'object') {
+      try { return JSON.stringify(v); } catch { return String(v); }
+    }
+    return String(v);
+  }
+
+  async function refreshCells() {
+    try {
+      const r = await fetch('/api/cells');
+      const d = await r.json();
+      const list = document.getElementById('cell-list');
+      cells = {};
+      if (!d.cells || d.cells.length === 0) {
+        list.innerHTML = '<li class="empty">No cells loaded</li>';
+        return;
+      }
+      list.innerHTML = '';
+      for (const id of d.cells) {
+        const v = await fetchCellValue(id);
+        cells[id] = v;
+        const li = document.createElement('li');
+        li.dataset.cellId = id;
+        const status = v.status || 'idle';
+        const statusIcon = `<span class="${statusClass(status)}"></span>`;
+        const valueStr = status === 'error' ? `<span class="error">${escapeHtml(shortValue(v.error && v.error.message))}</span>` : escapeHtml(shortValue(v.data));
+        li.innerHTML = `${statusIcon}${escapeHtml(id)}<span class="value">${valueStr}</span>`;
+        li.onclick = () => selectCell(id);
+        list.appendChild(li);
+      }
+    } catch (e) {
+      console.error('refreshCells failed:', e);
+    }
+  }
+
+  async function fetchCellValue(id) {
+    const r = await fetch('/api/cell/' + encodeURIComponent(id));
+    if (!r.ok) return { status: 'error', data: null, error: { message: 'not found' } };
+    return await r.json();
+  }
+
+  function selectCell(id) {
+    selectedCell = id;
+    document.querySelectorAll('.cell-list li').forEach(li => {
+      li.classList.toggle('active', li.dataset.cellId === id);
+    });
+    renderCellDetail();
+  }
+
+  async function renderCellDetail() {
+    const panel = document.getElementById('cell-detail');
+    if (!selectedCell) {
+      panel.innerHTML = '<h3>Select a cell</h3><div class="empty">Click a cell in the sidebar.</div>';
+      return;
+    }
+    const v = await fetchCellValue(selectedCell);
+    let html = `<h3><span class="${statusClass(v.status)}"></span> ${escapeHtml(selectedCell)}</h3>`;
+    html += '<div class="kv">';
+    html += `<div class="k">Status</div><div class="v">${escapeHtml(v.status || '')}</div>`;
+    if (v.computed_at) {
+      const ts = new Date(v.computed_at).toISOString();
+      html += `<div class="k">Computed at</div><div class="v">${escapeHtml(ts)}</div>`;
+    }
+    html += `<div class="k">Value</div><div class="v"><pre class="json">${escapeHtml(JSON.stringify(v.data, null, 2))}</pre></div>`;
+    if (v.error) {
+      html += `<div class="k">Error</div><div class="v">${escapeHtml(v.error.message || '')}</div>`;
+    }
+    if (v.effects && v.effects.length) {
+      html += `<div class="k">Effects</div><div class="v"><pre class="json">${escapeHtml(JSON.stringify(v.effects, null, 2))}</pre></div>`;
+    }
+    html += '</div>';
+
+    // History
+    try {
+      const r = await fetch('/api/cell/' + encodeURIComponent(selectedCell) + '/history?limit=50');
+      if (r.ok) {
+        const d = await r.json();
+        if (d.rows && d.rows.length > 0) {
+          html += '<h3 style="margin-top:16px;">Recent history</h3>';
+          html += '<div class="panel" style="padding:0;">';
+          for (const row of d.rows) {
+            const ts = new Date(row.computed_at).toISOString();
+            html += `<div class="history-row"><span class="ts">${escapeHtml(ts)}</span><span class="v">${escapeHtml(shortValue(row.value))}</span><span class="s">${escapeHtml(row.status)}</span></div>`;
+          }
+          html += '</div>';
+        }
+      }
+    } catch {}
+
+    panel.innerHTML = html;
+  }
+
+  function connectWs() {
+    if (ws) ws.close();
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws.onopen = () => {
+      document.getElementById('conn-indicator').classList.add('live');
+      document.getElementById('conn-status').textContent = 'live';
+    };
+    ws.onclose = () => {
+      document.getElementById('conn-indicator').classList.remove('live');
+      document.getElementById('conn-status').textContent = 'disconnected';
+      setTimeout(connectWs, 2000);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (ev) => {
+      try {
+        const event = JSON.parse(ev.data);
+        // Find the matching cell in the sidebar and update its value
+        // preview.
+        const id = event.cell_id;
+        if (cells[id]) {
+          cells[id] = event.new_value;
+          const li = document.querySelector(`.cell-list li[data-cell-id="${CSS.escape(id)}"]`);
+          if (li) {
+            const valueEl = li.querySelector('.value');
+            if (valueEl) {
+              if (event.new_value.status === 'error') {
+                valueEl.outerHTML = `<span class="value error">${escapeHtml(event.new_value.error ? event.new_value.error.message : 'error')}</span>`;
+              } else {
+                valueEl.textContent = shortValue(event.new_value.data);
+              }
+            }
+          }
+          if (id === selectedCell) {
+            renderCellDetail();
+          }
+        }
+      } catch (e) {
+        console.error('ws message parse error:', e);
+      }
+    };
+  }
+
+  function toggleEditor() {
+    const p = document.getElementById('editor-panel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+    if (p.style.display === 'block') {
+      fetch('/api/sheet').then(r => r.json()).then(d => {
+        if (!d.error) {
+          document.getElementById('yaml-editor').value = jsyamlDump(d);
+        }
+      });
+    }
+  }
+
+  // Minimal YAML dumper (we don't need full YAML — just round-tripping).
+  function jsyamlDump(obj) {
+    if (obj === null || obj === undefined) return '';
+    if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
+      return String(obj);
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(v => '  - ' + jsyamlDump(v).split('\n').join('\n    ')).join('\n');
+    }
+    if (typeof obj === 'object') {
+      return Object.keys(obj).map(k => {
+        const v = obj[k];
+        if (typeof v === 'object' && v !== null) {
+          return `${k}:\n${jsyamlDump(v).split('\n').map(l => '  ' + l).join('\n')}`;
+        }
+        return `${k}: ${jsyamlDump(v)}`;
+      }).join('\n');
+    }
+    return String(obj);
+  }
+
+  async function loadYaml() {
+    const yaml = document.getElementById('yaml-editor').value;
+    const r = await fetch('/api/sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml }),
+    });
+    if (r.ok) {
+      toggleEditor();
+      await refreshCells();
+    } else {
+      const d = await r.json();
+      alert('Load failed: ' + (d.error || 'unknown'));
+    }
+  }
+
+  async function init() {
+    try {
+      const r = await fetch('/api/meta');
+      const d = await r.json();
+      document.getElementById('cell-count').textContent = d.cell_count || 0;
+      document.getElementById('engine-id').textContent = d.engine_id || '?';
+    } catch (e) {
+      console.error('init failed:', e);
+    }
+    await refreshCells();
+    connectWs();
+  }
+
+  init();
+</script>
+</body>
+</html>

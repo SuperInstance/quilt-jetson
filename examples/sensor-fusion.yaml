@@ -1,0 +1,136 @@
+# Sensor fusion example.
+#
+# This sheet fuses an IMU (3-axis accelerometer) with a GPS receiver
+# to produce a 3D position estimate. The math is a simple weighted
+# blend; in a real deployment you'd use an extended Kalman filter
+# (the `program` cell can host that).
+#
+# The IMU and GPS are simulated; the sheet is runnable end-to-end
+# without hardware. To wire up real sensors, change the `source`
+# fields to `imu:i2c-1:0x68` and `nmea:/dev/ttyTHS1:115200`.
+
+id: sensor-fusion
+title: IMU + GPS Sensor Fusion
+description: |
+  Fuse a 3-axis IMU with a GPS receiver to produce a position
+  estimate. The IMU provides high-rate but drift-prone data; the
+  GPS provides low-rate but absolute position. The blend favors
+  GPS for slow drift and IMU for short-term noise.
+version: 0.1.0
+
+axes:
+  rows: { name: sensor }
+  cols: { name: capability }
+
+cells:
+  # The IMU — 3 axes. In a real deployment, source would be
+  # `imu:i2c-1:0x68` (or the I2C bus and address of the IMU).
+  - id: imu.x
+    kind: sensor
+    source: imu:simulated
+    rate: 100
+    unit: m/s^2
+    description: "IMU X-axis (accelerometer)."
+
+  - id: imu.y
+    kind: sensor
+    source: imu:simulated
+    rate: 100
+    unit: m/s^2
+    description: "IMU Y-axis (accelerometer)."
+
+  - id: imu.z
+    kind: sensor
+    source: imu:simulated
+    rate: 100
+    unit: m/s^2
+    description: "IMU Z-axis (accelerometer)."
+
+  # The GPS receiver.
+  - id: gps.lat
+    kind: sensor
+    source: nmea:simulated
+    rate: 1
+    unit: degrees
+    description: "GPS latitude."
+
+  - id: gps.lon
+    kind: sensor
+    source: nmea:simulated
+    rate: 1
+    unit: degrees
+    description: "GPS longitude."
+
+  - id: gps.alt
+    kind: sensor
+    source: nmea:simulated
+    rate: 1
+    unit: m
+    description: "GPS altitude."
+
+  # The blend — a weighted average where GPS dominates slowly
+  # and IMU dominates quickly. A real implementation would use
+  # a Kalman filter; for the demo, a simple time-weighted blend
+  # suffices.
+  - id: blend.imu_weight
+    kind: value
+    value: 0.1
+    description: "IMU weight in the blend (small = GPS dominates)."
+
+  - id: blend.gps_weight
+    kind: formula
+    expr: =1 - blend.imu_weight
+    description: "GPS weight in the blend (1 - IMU weight)."
+
+  - id: position.x
+    kind: formula
+    expr: =gps.lon
+    unit: degrees
+    description: "Fused longitude (for now, just GPS)."
+
+  - id: position.y
+    kind: formula
+    expr: =gps.lat
+    unit: degrees
+    description: "Fused latitude (for now, just GPS)."
+
+  - id: position.z
+    kind: formula
+    expr: =gps.alt + imu.z * blend.imu_weight
+    unit: m
+    description: |
+      Fused altitude. The IMU contribution is small (just the
+      accelerometer reading weighted by `blend.imu_weight`).
+      A real Kalman filter would integrate the IMU over time.
+
+  # The total magnitude of the IMU reading — useful for
+  # detecting "is the device moving?"
+  - id: imu.magnitude
+    kind: formula
+    expr: |
+      Math.sqrt(
+        imu.x * imu.x +
+        imu.y * imu.y +
+        imu.z * imu.z
+      )
+    unit: m/s^2
+    description: "Magnitude of the IMU vector (3D)."
+
+  # A listener that fires when the device is moving fast.
+  - id: alert.moving
+    kind: listener
+    watch: [imu.magnitude]
+    condition: "imu.magnitude > 15"
+    action: log.moving
+    description: "Fires when |IMU| > 15 m/s^2 (heavy acceleration)."
+
+  - id: log.moving
+    kind: program
+    code: |
+      const m = await runtime.get("imu.magnitude");
+      return {
+        severity: "info",
+        message: `Device moving, |a|=${m.data.toFixed(2)} m/s^2`,
+        timestamp: Date.now(),
+      };
+    description: "Logs a moving event."
