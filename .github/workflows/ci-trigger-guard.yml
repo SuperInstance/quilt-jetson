@@ -1,0 +1,44 @@
+name: ci-trigger-guard
+
+# =============================================================================
+# THE TRIGGERS BELOW ARE DELIBERATELY UNFILTERED. THAT IS THE WHOLE POINT.
+#
+# This workflow's job is to prove that ci.yml's branch filter can actually match
+# something. If it carried the same `branches:` filter it is auditing, then it
+# would be silenced by exactly the defect it exists to catch -- a guard that
+# shares the failure mode of the thing it guards is a comment.
+#
+# So it listens to every push and every pull request regardless of branch name,
+# plus a weekly schedule so a default-branch rename is caught even on a quiet
+# repository.
+#
+# If you are ever tempted to add a `branches:` filter here, read this again.
+# tests/ci_triggers.rs asserts that this workflow has no branch filter.
+# =============================================================================
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+jobs:
+  guard:
+    name: CI trigger guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # The guard's own logic, tested offline first, so a parser regression is
+      # reported as a parser regression rather than as a mysterious pass.
+      - name: Guard self-test (offline, no network)
+        run: python3 scripts/ci_trigger_guard.py --self-test
+
+      # The live check: reads default_branch and the branch list from the API on
+      # every run. It never assumes the default branch, and it fails closed if
+      # the API cannot be reached.
+      - name: Assert every branch filter names a branch that exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci_trigger_guard.py

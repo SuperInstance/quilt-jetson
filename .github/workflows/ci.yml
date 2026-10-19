@@ -1,10 +1,23 @@
 name: ci
 
 on:
+  # These triggers used to say `main`. This repository's default branch is
+  # `master` and no `main` branch has ever existed, so ci.yml matched no push and
+  # no pull request and had produced exactly zero runs. The hardcoded
+  # "CI: passing" badge in the README was the only thing asserting CI was green.
+  #
+  # `master` is the default branch and is what gates CI. `main` is declared in
+  # .github/branch-aliases.txt, so this workflow survives the fleet-wide branch
+  # convention either way; a filter is a union, so naming an extra branch can
+  # only add matches.
+  #
+  # .github/workflows/ci-trigger-guard.yml asserts all of this on every run. Its
+  # own triggers are deliberately UNFILTERED, because a guard that shares the
+  # filter it guards cannot fire when that filter breaks.
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
