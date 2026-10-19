@@ -27,9 +27,7 @@ use clap::{Parser, Subcommand};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use quilt_jetson::{
-    parse_sheet, parse_sheet_file, EngineConfig, Error, QuiltEngine, SqliteStore,
-};
+use quilt_jetson::{parse_sheet, parse_sheet_file, EngineConfig, Error, QuiltEngine, SqliteStore};
 
 #[derive(Parser, Debug)]
 #[command(name = "quilt-jetson")]

@@ -2,6 +2,13 @@
 name = "quilt-jetson"
 version = "0.1.0"
 edition = "2021"
+# The MSRV, declared so cargo enforces it and so the CI job and the
+# manifest cannot drift apart again. A Dependabot bump moved the CI
+# job's toolchain to 1.120 -- a version that DOES NOT EXIST -- while
+# this job was still called "MSRV (1.75)". The name and the toolchain
+# disagreed, and the disagreement was invisible until the job tried
+# to download a toolchain that had never been released.
+rust-version = "1.75"
 description = "Quilt reactive runtime for NVIDIA Jetson devices — edge ML, ROS2, vision, federation"
 license = "Apache-2.0"
 authors = ["The Quilt Authors"]
@@ -97,7 +104,14 @@ rclrs = { version = "0.1", optional = true }
 # platform-specific wheels. We abstract it behind a feature so the MVP
 # can build and run everywhere. The `vision` module uses a pure-Rust
 # stub when this feature is off.
-ort = { version = "2", optional = true }
+# `ort = "2"` RESOLVED TO NOTHING, and it broke EVERY cargo command --
+# including the ones that do not use it. The published versions are all
+# PRE-RELEASES (2.0.0-rc.N), and cargo excludes a pre-release from a
+# plain `^2` requirement unless the requirement NAMES it. The feature
+# is optional, so this read like an inert line; it was not: an
+# unresolvable dependency breaks the lockfile, and the lockfile breaks
+# the build, the tests, the fmt check and the publish.
+ort = { version = "=2.0.0-rc.14", optional = true }
 
 [features]
 default = []
