@@ -98,7 +98,7 @@ bytes = "1.6"
 # ros2` brings in the real bridge. Tests for the bridge live in the
 # `tests/ros2_bridge.rs` integration test, which is `#[ignore]`d by
 # default to keep CI fast.
-rclrs = { version = "0.1", optional = true }
+rclrs = { version = "0.8", optional = true }
 
 # Likewise, the actual ONNX runtime (ort) is a large dependency with
 # platform-specific wheels. We abstract it behind a feature so the MVP
