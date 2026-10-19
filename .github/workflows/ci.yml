@@ -15,9 +15,9 @@ on:
   # own triggers are deliberately UNFILTERED, because a guard that shares the
   # filter it guards cannot fire when that filter breaks.
   push:
-    branches: [master, main]
+    branches: [main]
   pull_request:
-    branches: [master, main]
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
