@@ -587,7 +587,9 @@ mod tests {
 
     #[test]
     fn json_dynamic_round_trip() {
-        assert_eq!(json_to_dynamic(Value::Null), rhai::Dynamic::UNIT);
+        // `Dynamic` does not implement `PartialEq`, so this cannot be an
+        // `assert_eq!`. `is_unit()` is the way to ask the question.
+        assert!(json_to_dynamic(Value::Null).is_unit());
         assert_eq!(json_to_dynamic(Value::Bool(true)).as_bool().unwrap(), true);
         assert_eq!(json_to_dynamic(json!(42)).as_int().unwrap(), 42);
         assert_eq!(

@@ -40,6 +40,44 @@ use crate::engine::SubscriptionEvent;
 use crate::types::{CellDef, CellValue};
 use crate::QuiltEngine;
 
+/// The error a handler returns.
+///
+/// **A HANDLER'S ERROR TYPE HAS TO IMPLEMENT `IntoResponse`.** axum 0.7
+/// does not implement `IntoResponse` for a tuple, so the handlers'
+/// `Result<Json<Value>, (StatusCode, Json<Value>)>` did not satisfy
+/// axum's `Handler` bound -- which means **not one route on the router
+/// could be registered**, and the failure surfaced as a trait bound
+/// error on the `.route(...)` call rather than as anything to do with
+/// the state.
+#[derive(Debug)]
+pub struct ApiError {
+    status: StatusCode,
+    body: Value,
+}
+
+impl ApiError {
+    /// A bad request with a JSON body.
+    pub fn bad_request(body: Value) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            body,
+        }
+    }
+
+    /// An error with a status and a JSON body.
+    pub fn new(status: StatusCode, body: Value) -> Self {
+        Self { status, body }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let mut response = Json(self.body).into_response();
+        *response.status_mut() = self.status;
+        response
+    }
+}
+
 /// The shared application state.
 pub struct AppState {
     /// The Quilt engine.
@@ -128,27 +166,27 @@ async fn get_sheet(State(state): State<Arc<AppState>>) -> Json<Value> {
 async fn post_sheet(
     State(state): State<Arc<AppState>>,
     Json(body): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+) -> Result<Json<Value>, ApiError> {
     let yaml = match body.get("yaml").and_then(|v| v.as_str()) {
         Some(y) => y,
         None => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "expected {yaml: '...'}")),
-            ))
+            return Err(ApiError::bad_request(json!({
+                "error": "expected {yaml: '...'}"
+            })))
         }
     };
     let sheet: crate::types::SheetDef = match serde_yaml::from_str(yaml) {
         Ok(s) => s,
         Err(e) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": format!("YAML parse: {e}")})),
-            ))
+            return Err(ApiError::bad_request(json!({
+                "error": format!("YAML parse: {e}")
+            })))
         }
     };
-    if let Err(e) = state.engine.load_sheet(sheet.clone()).await {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e.to_string()}))));
+    // `load_sheet` is SYNCHRONOUS. The `.await` here was awaiting a
+    // `Result`, which is not a future.
+    if let Err(e) = state.engine.load_sheet(sheet.clone()) {
+        return Err(ApiError::bad_request(json!({"error": e.to_string()})));
     }
     *state.sheet.write() = Some(sheet);
     Ok(Json(json!({"ok": true, "cell_count": state.engine.list_ids().len()})))
@@ -163,7 +201,7 @@ async fn get_cells(State(state): State<Arc<AppState>>) -> Json<Value> {
 async fn get_cell(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+) -> Result<Json<Value>, ApiError> {
     match state
         .engine
         .get(&id, crate::types::CallerContext::default())
@@ -171,14 +209,14 @@ async fn get_cell(
     {
         Ok(v) => match serde_json::to_value(&v) {
             Ok(v) => Ok(Json(v)),
-            Err(_) => Err((
+            Err(_) => Err(ApiError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "could not serialize value"})),
+                json!({"error": "could not serialize value"}),
             )),
         },
-        Err(e) => Err((
+        Err(e) => Err(ApiError::new(
             StatusCode::NOT_FOUND,
-            Json(json!({"error": e.to_string()})),
+            json!({"error": e.to_string()}),
         )),
     }
 }
@@ -188,7 +226,7 @@ async fn set_cell(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(body): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+) -> Result<Json<Value>, ApiError> {
     let data = body.get("value").cloned().unwrap_or(Value::Null);
     match state
         .engine
@@ -196,9 +234,9 @@ async fn set_cell(
         .await
     {
         Ok(()) => Ok(Json(json!({"ok": true}))),
-        Err(e) => Err((
+        Err(e) => Err(ApiError::new(
             StatusCode::NOT_FOUND,
-            Json(json!({"error": e.to_string()})),
+            json!({"error": e.to_string()}),
         )),
     }
 }
@@ -240,12 +278,21 @@ async fn ws_loop(
     mut socket: axum::extract::ws::WebSocket,
     mut rx: broadcast::Receiver<SubscriptionEvent>,
 ) {
-    use futures::StreamExt;
     use tokio::io::AsyncWriteExt;
-    while let Some(msg) = rx.next().await {
-        let event = match msg {
+    loop {
+        // NOT `rx.next()`. tokio's `broadcast::Receiver` implements
+        // `Stream` only behind the `stream` feature of `tokio`'s `sync`
+        // feature, which this crate does not enable -- so `next()` is not
+        // a method on it at all, and the type of `msg` could not even be
+        // inferred (the compiler fell back to the never type).
+        //
+        // A LAGGED receiver has MISSED messages. It is not closed, and it
+        // is not a reason to stop: skip the lost messages and carry on.
+        // Only Closed ends the loop.
+        let event = match rx.recv().await {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(broadcast::error::RecvError::Closed) => break,
         };
         let payload = match serde_json::to_string(&event) {
             Ok(s) => s,
@@ -303,7 +350,7 @@ mod tests {
         let engine_clone = engine.clone();
         let sheet_clone = sheet.clone();
         let _ = tokio::runtime::Handle::current().spawn(async move {
-            let _ = engine_clone.load_sheet(sheet_clone).await;
+            let _ = engine_clone.load_sheet(sheet_clone);
         });
         engine
     }

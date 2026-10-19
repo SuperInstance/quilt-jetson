@@ -107,7 +107,9 @@ pub mod web;
 // Re-exports for convenience. Most users only need these.
 pub use crate::engine::{EngineConfig, QuiltEngine, SubscriptionEvent, SubscriptionHandle};
 pub use crate::error::{Error, Result};
-pub use crate::parser::{parse_sheet, serialize_sheet, validate_sheet};
+// `parse_sheet_file` was MISSING from this list, and the binary imports
+// it from the crate root -- so the binary target did not compile either.
+pub use crate::parser::{parse_sheet, parse_sheet_file, serialize_sheet, validate_sheet};
 pub use crate::persistence::{CellHistoryRow, SqliteStore};
 pub use crate::types::{
     AxisDef, CallerContext, Cell, CellDef, CellError, CellId, CellKind, CellStatus, CellValue,
