@@ -69,7 +69,7 @@ serde_yaml = "0.9"
 rhai = { version = "1.20", features = ["sync", "serde"] }
 
 # Web server + federation transport
-axum = { version = "0.7", features = ["ws", "macros"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
 # `rustls-tls`, not `native-tls`, and this is a Jetson repo.
 # `native-tls` pulls in `openssl-sys`, which needs a system OpenSSL for the
 # TARGET. That made the aarch64 cross job die in `openssl-sys`'s build
