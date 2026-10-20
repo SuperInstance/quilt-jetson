@@ -173,7 +173,29 @@ impl SqliteStore {
             SELECT cell_id, value, status, computed_at
             FROM cell_history
             WHERE cell_id = ?1
-            ORDER BY computed_at DESC
+              -- `computed_at` ALONE IS NOT A TOTAL ORDER.
+              --
+              -- `append` binds `value.computed_at.unwrap_or(0)`, so a
+              -- CellValue that never had a timestamp set stores 0. Two
+              -- such appends TIE, and `ORDER BY computed_at DESC` leaves
+              -- their relative order undefined. SQLite is then free to
+              -- return them in either order, and a cell's history comes
+              -- back reversed.
+              --
+              -- Not hypothetical: a real flake that only appeared under
+              -- `cargo tarpaulin`, where the tests run slower and the tie
+              -- lands differently. It passed 238/238 in normal runs.
+              --
+              --     assertion `left == right` failed
+              --       left: Number(1)
+              --      right: Number(2)
+              --
+              -- So ORDER BY SOMETHING THAT IS ACTUALLY TOTAL. `id` is
+              -- INTEGER PRIMARY KEY AUTOINCREMENT, so it is strictly
+              -- increasing in insertion order by construction. Ties on the
+              -- timestamp fall back to insertion order -- which is the
+              -- truth: the second append really is the newer one.
+              ORDER BY computed_at DESC, id DESC
             LIMIT ?2
             "#,
         )
