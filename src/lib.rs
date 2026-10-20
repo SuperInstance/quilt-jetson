@@ -65,9 +65,10 @@
 //! let yaml = std::fs::read_to_string("examples/sensor-fusion.yaml")?;
 //! let sheet = parse_sheet(&yaml)?;
 //!
-//! let engine = std::sync::Arc::new(
-//!     QuiltEngine::with_sheet(EngineConfig::default(), sheet)?
-//! );
+//! // `with_sheet` takes (id, config, sheet). The id names the engine, and
+//! // it is not optional: an engine that cannot be told apart from another
+//! // engine cannot have its trace addressed.
+//! let engine = QuiltEngine::with_sheet("sensor-fusion", EngineConfig::default(), sheet)?;
 //! let value = engine.get("position.x", Default::default()).await?;
 //! println!("x = {}", value.data);
 //! # Ok(()) }

@@ -8,7 +8,29 @@ edition = "2021"
 # this job was still called "MSRV (1.75)". The name and the toolchain
 # disagreed, and the disagreement was invisible until the job tried
 # to download a toolchain that had never been released.
-rust-version = "1.75"
+  # MSRV, measured rather than guessed. The previous value was 1.75 and it
+  # was FALSE from the day it was written.
+  #
+  # `rust-version` describes OUR crate. It does not describe our
+  # dependencies, and the dependencies float. `indexmap = "2"` resolves to
+  # 2.14.2, whose manifest declares `edition2024` -- a Cargo feature that
+  # did not exist in 1.75, so cargo cannot even PARSE it. We measured the
+  # floor by bisecting real toolchains against this exact lockfile:
+  #
+  #   1.75  -> error: feature `edition2024` is required
+  #   1.85  -> icu_normalizer@2.3.0 requires rustc 1.88
+  #   1.88  -> uuid@1.28.0 requires rustc 1.89.0
+  #   1.89  -> Finished `dev` profile        <-- the floor
+  #
+  # 1.89 is the minimum that builds this dependency set, so that is what
+  # is declared. The CI job is pinned to the same number by
+  # `tests/msrv_matches_manifest.rs`, which reads this field and compares
+  # it to the toolchain the workflow installs -- so the two cannot drift
+  # apart a second time.
+  #
+  # A declared MSRV is a boundary claim. A wrong one is a defect, not a
+  # conservative default.
+  rust-version = "1.89"
 description = "Quilt reactive runtime for NVIDIA Jetson devices — edge ML, ROS2, vision, federation"
 license = "Apache-2.0"
 authors = ["The Quilt Authors"]
@@ -48,7 +70,14 @@ rhai = { version = "1.20", features = ["sync", "serde"] }
 
 # Web server + federation transport
 axum = { version = "0.7", features = ["ws", "macros"] }
-tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+# `rustls-tls`, not `native-tls`, and this is a Jetson repo.
+# `native-tls` pulls in `openssl-sys`, which needs a system OpenSSL for the
+# TARGET. That made the aarch64 cross job die in `openssl-sys`'s build
+# script with "Package 'openssl' ... not found" -- an environment failure
+# masquerading as a code failure. `reqwest` in this manifest already chose
+# `rustls-tls`; the websocket client was the odd one out. Rustls is pure
+# Rust, so it cross-compiles without a target sysroot.
+tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
 tower = "0.5"
 tower-http = { version = "0.5", features = ["fs", "trace"] }
 

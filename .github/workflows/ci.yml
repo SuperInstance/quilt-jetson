@@ -135,9 +135,26 @@ jobs:
           targets: aarch64-unknown-linux-gnu
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
+      # This job had a real defect behind it, and it was not a build error
+      # at all. `tokio-tungstenite` asked for `native-tls`, which pulls in
+      # `openssl-sys`, which needs a system OpenSSL for the TARGET. The job
+      # died in openssl-sys's build script with:
+      #
+      #   Package openssl was not found in the pkg-config search path.
+      #   The system library `openssl` required by crate `openssl-sys` was
+      #   not found.
+      #
+      # An environment failure wearing the costume of a compile error. Fixed
+      # in Cargo.toml: the websocket client now uses
+      # `rustls-tls-native-roots`, which is pure Rust and needs no target
+      # sysroot, while still trusting the OS certificate store -- which is
+      # what a Jetson needs for private-CA federation.
+      #
+      # There was also a second cross step here labelled "all features"
+      # running the same command. A copy-paste duplicate: once the
+      # `--all-features` flags came off, the two steps became byte-identical,
+      # so it was a second green step testing nothing new. Collapsed to one.
       - name: Cross build (default features)
-        run: cross build --target aarch64-unknown-linux-gnu
-      - name: Cross build (all features)
         run: cross build --target aarch64-unknown-linux-gnu
 
   # -------------------------------------------------------------------------
@@ -152,9 +169,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+      # The workflow sets `RUSTFLAGS: "-D warnings"` globally. That is right
+      # for OUR code and wrong for tarpaulin's own instrumentation pass:
+      # tarpaulin rebuilds the dependency tree with `--cfg tarpaulin
+      # -Clink-dead-code -Dwarnings`, and `pulp` (via `exr` via `image`) has
+      # a const assertion
+      #
+      #   assert!(size_of::<T>() == size_of::<U>())
+      #
+      # that does not hold under that cfg. The job died with
+      #
+      #   error[E0080]: evaluation panicked
+      #   could not compile `pulp` (lib) due to 10 previous errors
+      #
+      # which reads like a defect in this crate and is not one. So coverage
+      # runs with the global RUSTFLAGS cleared.
+      #
+      # Linting is not skipped to make this green -- the `lint` job above
+      # still runs `cargo clippy --all-targets -- -D warnings` on the same
+      # commit. This job measures coverage; that job enforces style. Two
+      # jobs, two jobs' jobs.
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Run coverage
+        env:
+          RUSTFLAGS: ""
         run: cargo tarpaulin --verbose --workspace --timeout 120 --out Xml
       - name: Upload to Codecov
         uses: codecov/codecov-action@v7
@@ -186,13 +225,21 @@ jobs:
   # MSRV check
   # -------------------------------------------------------------------------
   msrv:
-    name: MSRV (1.75)
+    name: MSRV (1.89)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.75
+      - uses: dtolnay/rust-toolchain@1.89
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+      # 1.89, not the 1.75 this job used to name. Cargo 1.75 cannot PARSE
+      # `indexmap-2.14.2`'s manifest, because that crate declares
+      # `edition2024`. The floor was measured by bisecting real
+      # toolchains against this lockfile; the receipts are on the
+      # `rust-version` field in Cargo.toml.
+      #
+      # `tests/msrv_matches_manifest.rs` fails if this number and the
+      # manifest's `rust-version` ever drift apart.
       - name: Build (no features)
-        run: cargo build
+        run: cargo build --locked
