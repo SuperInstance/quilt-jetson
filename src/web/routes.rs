@@ -28,16 +28,15 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::Router;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
-use tracing::warn;
 
 use crate::engine::SubscriptionEvent;
-use crate::types::{CellDef, CellValue};
+use crate::types::CellValue;
 use crate::QuiltEngine;
 
 /// The error a handler returns.
@@ -136,12 +135,9 @@ pub fn make_router(state: Arc<AppState>) -> Router {
 
 /// `GET /`
 async fn root() -> Response {
-    match include_str!("static/index.html")
+    include_str!("static/index.html")
         .to_string()
         .into_response()
-    {
-        r => r,
-    }
 }
 
 /// `GET /api/meta` — engine metadata.
@@ -280,7 +276,6 @@ async fn ws_loop(
     mut socket: axum::extract::ws::WebSocket,
     mut rx: broadcast::Receiver<SubscriptionEvent>,
 ) {
-    use tokio::io::AsyncWriteExt;
     loop {
         // NOT `rx.next()`. tokio's `broadcast::Receiver` implements
         // `Stream` only behind the `stream` feature of `tokio`'s `sync`

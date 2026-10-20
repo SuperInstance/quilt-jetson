@@ -26,7 +26,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::error::{Error, Result};
 use crate::types::{now_millis, Cell, CellStatus, CellValue, Effect};
 
 /// A chat-completion request.

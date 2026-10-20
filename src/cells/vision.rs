@@ -38,7 +38,7 @@
 //!   endpoints to this evaluator.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::error::{Error, Result};
 use crate::types::{now_millis, Cell, CellStatus, CellValue, Effect};
@@ -64,7 +64,8 @@ impl VisionTask {
             VisionTask::Segment => "segment",
         }
     }
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Parse from a string. Inverse of `as_str`.
+    pub fn parse_label(s: &str) -> Option<Self> {
         match s {
             "detect" => Some(VisionTask::Detect),
             "classify" => Some(VisionTask::Classify),
@@ -279,7 +280,7 @@ pub async fn evaluate_vision(cell: Cell, _ctx: crate::types::CallerContext) -> C
         .def
         .headers
         .get("task")
-        .and_then(|s| VisionTask::from_str(s))
+        .and_then(|s| VisionTask::parse_label(s))
         .unwrap_or(VisionTask::Detect);
 
     // Build the request. Image source defaults to the `source` field
@@ -396,11 +397,15 @@ pub fn nms(mut detections: Vec<Detection>, iou_threshold: f64) -> Vec<Detection>
     keep
 }
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{CellDef, CellKind};
-    use serde_json::json;
+    // `json` is not used in this test module.
 
     fn vision_cell(endpoint: &str) -> Cell {
         Cell::new(CellDef {
@@ -576,10 +581,16 @@ mod tests {
 
     #[test]
     fn vision_task_round_trip() {
-        assert_eq!(VisionTask::from_str("detect"), Some(VisionTask::Detect));
-        assert_eq!(VisionTask::from_str("classify"), Some(VisionTask::Classify));
-        assert_eq!(VisionTask::from_str("segment"), Some(VisionTask::Segment));
-        assert_eq!(VisionTask::from_str("bogus"), None);
+        assert_eq!(VisionTask::parse_label("detect"), Some(VisionTask::Detect));
+        assert_eq!(
+            VisionTask::parse_label("classify"),
+            Some(VisionTask::Classify)
+        );
+        assert_eq!(
+            VisionTask::parse_label("segment"),
+            Some(VisionTask::Segment)
+        );
+        assert_eq!(VisionTask::parse_label("bogus"), None);
         assert_eq!(VisionTask::Detect.as_str(), "detect");
     }
 

@@ -62,9 +62,9 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, trace, warn};
 
 use crate::cells::{
-    evaluate_api, evaluate_formula, evaluate_io, evaluate_listener, evaluate_program,
-    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, fire_listener,
-    make_io_value, make_sensor_value,
+    evaluate_api, evaluate_formula, evaluate_io, evaluate_program, evaluate_router,
+    evaluate_sensor, evaluate_value, evaluate_vision, fire_listener, make_io_value,
+    make_sensor_value,
 };
 use crate::error::{Error, Result};
 use crate::persistence::SqliteStore;
@@ -79,7 +79,6 @@ use crate::types::{
     CellKind,
     CellStatus,
     CellValue,
-    Effect,
     EvaluationTrace,
     SheetDef,
     SubscriptionId,
@@ -505,7 +504,7 @@ impl QuiltEngine {
     pub async fn call(
         self: &Arc<Self>,
         id: &str,
-        input: Option<Value>,
+        _input: Option<Value>,
         ctx: CallerContext,
     ) -> Result<CellValue> {
         // For MVP, calling is the same as getting.
@@ -621,6 +620,7 @@ impl QuiltEngine {
     }
 
     /// Record a trace entry. Used by cell evaluators.
+    #[allow(dead_code)]
     pub(crate) fn record_trace(self: &Arc<Self>, trace: EvaluationTrace) {
         if !self.config.tracing {
             return;
@@ -1020,8 +1020,11 @@ fn expr_contains_token(expr: &str, id: &str) -> bool {
 
 // (Effect is in types.rs; we re-import here to keep the engine file
 // self-contained.)
-pub use crate::types::Effect as EngineEffect;
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;

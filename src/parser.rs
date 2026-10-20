@@ -235,9 +235,11 @@ fn validate_cell(cell: &CellDef) -> Result<()> {
 /// Build a `CellDef` programmatically. Used by integration tests to
 /// avoid writing YAML by hand.
 pub fn cell(id: &str, kind: CellKind, build: impl FnOnce(&mut CellDef)) -> CellDef {
-    let mut def = CellDef::default();
-    def.id = id.to_string();
-    def.kind = kind;
+    let mut def = CellDef {
+        id: id.to_string(),
+        kind,
+        ..Default::default()
+    };
     build(&mut def);
     def
 }

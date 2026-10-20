@@ -45,7 +45,7 @@ use std::sync::Arc;
 use rhai::{Array, Dynamic, Engine, Map, Scope};
 use serde_json::Value;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::types::{now_millis, CallerContext, Cell, CellStatus, CellValue};
 
 /// The runtime handle exposed to `program` and `router` cells. Async
@@ -282,21 +282,21 @@ fn dynamic_to_json(d: Dynamic) -> Value {
     if d.is_unit() {
         return Value::Null;
     }
-    if let Some(b) = d.as_bool().ok() {
+    if let Ok(b) = d.as_bool() {
         return Value::Bool(b);
     }
-    if let Some(i) = d.as_int().ok() {
+    if let Ok(i) = d.as_int() {
         return Value::Number(i.into());
     }
-    if let Some(f) = d.as_float().ok() {
+    if let Ok(f) = d.as_float() {
         if let Some(n) = serde_json::Number::from_f64(f) {
             return Value::Number(n);
         }
     }
-    if let Some(s) = d.clone().into_string().ok() {
+    if let Ok(s) = d.clone().into_string() {
         return Value::String(s);
     }
-    if let Some(arr) = d.clone().into_array().ok() {
+    if let Ok(arr) = d.clone().into_array() {
         return Value::Array(arr.into_iter().map(dynamic_to_json).collect());
     }
     if let Some(m) = d.clone().try_cast::<rhai::Map>() {
@@ -309,6 +309,10 @@ fn dynamic_to_json(d: Dynamic) -> Value {
     Value::Null
 }
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;

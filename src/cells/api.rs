@@ -321,6 +321,10 @@ fn lookup(ctx: &crate::types::CallerContext, path: &str) -> String {
     }
 }
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -166,7 +166,8 @@ impl CellKind {
     }
 
     /// Try to parse a kind from a string. Inverse of `as_str`.
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Parse from a string. Inverse of `as_str`.
+    pub fn parse_kind(s: &str) -> Option<Self> {
         match s {
             "value" => Some(CellKind::Value),
             "formula" => Some(CellKind::Formula),
@@ -223,7 +224,7 @@ pub enum CellStatus {
 }
 
 impl CellStatus {
-    /// Short string label. Inverse of `from_str` for the well-known
+    /// Short string label. Inverse of `parse_kind` for the well-known
     /// cases.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -945,11 +946,6 @@ pub(crate) fn now_millis() -> u64 {
     chrono::Utc::now().timestamp_micros() as u64
 }
 
-/// The internal sub-millisecond representation used by the persistence
-/// layer to keep two `append`s in the same millisecond from tying.
-#[allow(non_camel_case_types)]
-pub(crate) type now_micros = u64;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -957,7 +953,7 @@ mod tests {
     #[test]
     fn cell_kind_round_trip() {
         for kind in CellKind::ALL {
-            assert_eq!(CellKind::from_str(kind.as_str()), Some(*kind));
+            assert_eq!(CellKind::parse_kind(kind.as_str()), Some(*kind));
         }
     }
 
@@ -1077,10 +1073,7 @@ mod tests {
     #[test]
     fn status_as_str_matches_kind_as_str() {
         // Just verify all status labels are unique.
-        let mut labels: Vec<&str> = ["idle", "computing", "ready", "error", "stale"]
-            .iter()
-            .copied()
-            .collect();
+        let mut labels: Vec<&str> = ["idle", "computing", "ready", "error", "stale"].to_vec();
         labels.sort();
         labels.dedup();
         assert_eq!(labels.len(), 5);

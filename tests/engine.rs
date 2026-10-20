@@ -60,7 +60,7 @@ async fn full_lifecycle() {
             formula_def("product", "=a * b"),
         ],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
 
     // Evaluate.
     let sum = e.get("sum", CallerContext::default()).await.unwrap();
@@ -94,7 +94,7 @@ async fn sensor_and_formula() {
             formula_def("heading2", "=heading * 2"),
         ],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
 
     // Push to the sensor.
     e.push("heading", json!(90)).await.unwrap();
@@ -115,9 +115,9 @@ async fn subscribe_to_changes() {
         axes: None,
         cells: vec![value_def("a", json!(1))],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
 
-    let sub = e.subscribe("a").unwrap();
+    let mut sub = e.subscribe("a").unwrap();
     e.set("a", json!(2), CallerContext::default())
         .await
         .unwrap();
@@ -139,7 +139,7 @@ async fn subscribe_all_receives_changes() {
         axes: None,
         cells: vec![value_def("a", json!(1)), value_def("b", json!(2))],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
 
     let _sub = e.subscribe_all();
     e.set("a", json!(3), CallerContext::default())
@@ -163,7 +163,7 @@ async fn register_dynamic_cell() {
         axes: None,
         cells: vec![value_def("a", json!(1))],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
 
     let added = e.register(value_def("dynamic", json!(99))).unwrap();
     assert!(added);
@@ -182,7 +182,7 @@ async fn get_cell_returns_clone() {
         axes: None,
         cells: vec![value_def("a", json!(1))],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
     let c = e.get_cell("a");
     assert!(c.is_some());
     assert_eq!(c.unwrap().id, "a");
@@ -206,7 +206,7 @@ async fn push_to_value_errors() {
         axes: None,
         cells: vec![value_def("a", json!(1))],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
     let r = e.push("a", json!(2)).await;
     assert!(r.is_err());
 }
@@ -228,7 +228,7 @@ async fn push_to_io_cell() {
             ..Default::default()
         }],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
     e.push("io", json!({"event": "tick"})).await.unwrap();
     let v = e.get("io", CallerContext::default()).await.unwrap();
     assert_eq!(v.data, json!({"event": "tick"}));
@@ -245,7 +245,7 @@ async fn call_returns_value() {
         axes: None,
         cells: vec![value_def("a", json!(42))],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
     let v = e
         .call("a", Some(json!({"input": 1})), CallerContext::default())
         .await
@@ -268,7 +268,7 @@ async fn list_cells_returns_all() {
             formula_def("c", "=a + b"),
         ],
     };
-    e.load_sheet(sheet).await.unwrap();
+    e.load_sheet(sheet).unwrap();
     let ids = e.list_ids();
     assert_eq!(ids.len(), 3);
     assert!(ids.contains(&"a".to_string()));

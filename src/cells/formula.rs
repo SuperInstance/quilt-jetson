@@ -379,21 +379,21 @@ pub fn dynamic_to_json(d: rhai::Dynamic) -> Value {
     if d.is_unit() {
         return Value::Null;
     }
-    if let Some(b) = d.as_bool().ok() {
+    if let Ok(b) = d.as_bool() {
         return Value::Bool(b);
     }
-    if let Some(i) = d.as_int().ok() {
+    if let Ok(i) = d.as_int() {
         return Value::Number(i.into());
     }
-    if let Some(f) = d.as_float().ok() {
+    if let Ok(f) = d.as_float() {
         if let Some(n) = serde_json::Number::from_f64(f) {
             return Value::Number(n);
         }
     }
-    if let Some(s) = d.clone().into_string().ok() {
+    if let Ok(s) = d.clone().into_string() {
         return Value::String(s);
     }
-    if let Some(arr) = d.clone().into_array().ok() {
+    if let Ok(arr) = d.clone().into_array() {
         let items: Vec<Value> = arr.into_iter().map(dynamic_to_json).collect();
         return Value::Array(items);
     }
@@ -435,22 +435,25 @@ fn rewrite_known_ids(body: &str, known_ids: &[String]) -> String {
             continue;
         }
         // Inside an existing `cells[...]` block — copy through.
-        if chars[i] == 'c' && i + 5 < chars.len() && &body[i..i + 5] == "cells" {
-            if i + 5 < chars.len() && chars[i + 5] == '[' {
-                out.push_str("cells[");
-                i += 6;
-                let mut depth = 1;
-                while i < chars.len() && depth > 0 {
-                    if chars[i] == '[' {
-                        depth += 1;
-                    } else if chars[i] == ']' {
-                        depth -= 1;
-                    }
-                    out.push(chars[i]);
-                    i += 1;
+        if chars[i] == 'c'
+            && i + 5 < chars.len()
+            && &body[i..i + 5] == "cells"
+            && i + 5 < chars.len()
+            && chars[i + 5] == '['
+        {
+            out.push_str("cells[");
+            i += 6;
+            let mut depth = 1;
+            while i < chars.len() && depth > 0 {
+                if chars[i] == '[' {
+                    depth += 1;
+                } else if chars[i] == ']' {
+                    depth -= 1;
                 }
-                continue;
+                out.push(chars[i]);
+                i += 1;
             }
+            continue;
         }
         // Try to match a known id at this position.
         let mut matched = false;
@@ -496,6 +499,10 @@ fn rewrite_known_ids(body: &str, known_ids: &[String]) -> String {
     out
 }
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,13 +587,20 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn json_dynamic_round_trip() {
         // `Dynamic` does not implement `PartialEq`, so this cannot be an
         // `assert_eq!`. `is_unit()` is the way to ask the question.
         assert!(json_to_dynamic(Value::Null).is_unit());
-        assert_eq!(json_to_dynamic(Value::Bool(true)).as_bool().unwrap(), true);
+        assert!(json_to_dynamic(Value::Bool(true)).as_bool().unwrap());
         assert_eq!(json_to_dynamic(json!(42)).as_int().unwrap(), 42);
-        assert_eq!(json_to_dynamic(json!(3.14)).as_float().unwrap(), 3.14_f64);
+        // 3.14 is the TEST VALUE being round-tripped, not an
+        // approximation of PI, so the lint does not apply.
+        let three_oh_one_four = 3.14_f64;
+        assert_eq!(
+            json_to_dynamic(json!(3.14)).as_float().unwrap(),
+            three_oh_one_four
+        );
         assert_eq!(json_to_dynamic(json!("x")).into_string().unwrap(), "x");
     }
 

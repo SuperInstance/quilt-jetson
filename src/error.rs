@@ -18,7 +18,6 @@
 //!   (CLI, examples) — libraries should use the typed `Result`.
 
 use std::io;
-use std::path::PathBuf;
 
 /// The crate-level result alias. Use this in fallible APIs.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -268,6 +267,7 @@ mod tests {
 
     #[test]
     fn file_path_error_converts() {
+        use std::path::PathBuf;
         // PathBuf::open would give a NotFound, but we just want to
         // exercise the from<io::Error> path.
         let _p: PathBuf = "/nope".into();
