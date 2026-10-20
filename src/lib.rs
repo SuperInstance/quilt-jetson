@@ -113,8 +113,8 @@ pub use crate::parser::{parse_sheet, parse_sheet_file, serialize_sheet, validate
 pub use crate::persistence::{CellHistoryRow, SqliteStore};
 pub use crate::types::{
     AxisDef, CallerContext, Cell, CellDef, CellError, CellId, CellKind, CellStatus, CellValue,
-    Direction, Effect, EvaluationTrace, RouteTarget, RouterRule, SheetAxes, SheetDef,
-    Subscription, SubscriptionId,
+    Direction, Effect, EvaluationTrace, RouteTarget, RouterRule, SheetAxes, SheetDef, Subscription,
+    SubscriptionId,
 };
 
 // ROS2 types are feature-gated.
@@ -128,8 +128,8 @@ pub use crate::federation::{FederationClient, QuiltRef, RemoteCellEvent};
 // without going through the engine.
 pub use crate::cells::{
     evaluate_api, evaluate_formula, evaluate_io, evaluate_listener, evaluate_program,
-    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, make_io_value,
-    make_sensor_value, fire_listener,
+    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, fire_listener,
+    make_io_value, make_sensor_value,
 };
 
 mod engine;

@@ -52,7 +52,9 @@ pub struct WebConfig {
 impl Default for WebConfig {
     fn default() -> Self {
         Self {
-            bind: "0.0.0.0:8080".parse().expect("0.0.0.0:8080 is a valid address"),
+            bind: "0.0.0.0:8080"
+                .parse()
+                .expect("0.0.0.0:8080 is a valid address"),
         }
     }
 }
@@ -60,7 +62,10 @@ impl Default for WebConfig {
 /// Start the web server. Returns once the server stops (or fails).
 pub async fn serve(engine: Arc<crate::QuiltEngine>, config: WebConfig) -> crate::error::Result<()> {
     let app = make_router(Arc::new(AppState::new(engine)));
-    info!("Quilt Jetson web server listening on http://{}", config.bind);
+    info!(
+        "Quilt Jetson web server listening on http://{}",
+        config.bind
+    );
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     axum::serve(listener, app).await?;
     Ok(())

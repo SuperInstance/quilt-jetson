@@ -39,7 +39,7 @@ use rhai::{Array, Engine, Map, Scope, AST};
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::types::{now_millis, Cell, CellId, CellStatus, CellValue, CallerContext};
+use crate::types::{now_millis, CallerContext, Cell, CellId, CellStatus, CellValue};
 
 /// Build the context-key for per-context memoization. Exposed for
 /// reuse by the engine.
@@ -95,19 +95,21 @@ impl FormulaEngine {
     /// reference by their bare name. Each occurrence of an id in the
     /// expression is rewritten to `cells["id"]` at compile time.
     pub fn compile(source: &str, known_ids: &[String]) -> Result<Self> {
-        let body = source.strip_prefix('=').unwrap_or(source).trim().to_string();
+        let body = source
+            .strip_prefix('=')
+            .unwrap_or(source)
+            .trim()
+            .to_string();
 
         // Rewrite known ids to `cells["id"]` bracket access.
         let rewritten = rewrite_known_ids(&body, known_ids);
 
         let mut engine = Engine::new();
         register_helpers(&mut engine);
-        let ast = engine
-            .compile(&rewritten)
-            .map_err(|e| Error::ScriptError {
-                cell: "<compile>".into(),
-                message: format!("could not compile formula: {e}"),
-            })?;
+        let ast = engine.compile(&rewritten).map_err(|e| Error::ScriptError {
+            cell: "<compile>".into(),
+            message: format!("could not compile formula: {e}"),
+        })?;
         Ok(Self {
             source: source.to_string(),
             ast,
@@ -142,11 +144,7 @@ impl FormulaEngine {
         );
         caller.insert(
             "sheet".into(),
-            json_to_dynamic(ctx
-                .sheet
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null)),
+            json_to_dynamic(ctx.sheet.clone().map(Value::String).unwrap_or(Value::Null)),
         );
         if let Some(identity) = &ctx.identity {
             let mut id_map = Map::new();
@@ -261,9 +259,7 @@ fn clamp_f64_fn(n: f64, lo: f64, hi: f64) -> f64 {
     n.clamp(lo, hi)
 }
 
-fn min_array_fn(
-    args: rhai::Array,
-) -> std::result::Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
+fn min_array_fn(args: rhai::Array) -> std::result::Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
     let mut best: Option<f64> = None;
     for a in args {
         let n = a
@@ -284,9 +280,7 @@ fn min_array_fn(
         ))
     })
 }
-fn max_array_fn(
-    args: rhai::Array,
-) -> std::result::Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
+fn max_array_fn(args: rhai::Array) -> std::result::Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
     let mut best: Option<f64> = None;
     for a in args {
         let n = a
@@ -592,10 +586,7 @@ mod tests {
         assert!(json_to_dynamic(Value::Null).is_unit());
         assert_eq!(json_to_dynamic(Value::Bool(true)).as_bool().unwrap(), true);
         assert_eq!(json_to_dynamic(json!(42)).as_int().unwrap(), 42);
-        assert_eq!(
-            json_to_dynamic(json!(3.14)).as_float().unwrap(),
-            3.14_f64
-        );
+        assert_eq!(json_to_dynamic(json!(3.14)).as_float().unwrap(), 3.14_f64);
         assert_eq!(json_to_dynamic(json!("x")).into_string().unwrap(), "x");
     }
 

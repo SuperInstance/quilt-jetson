@@ -63,7 +63,10 @@ pub mod sensor;
 pub mod value;
 pub mod vision;
 
-pub use api::{evaluate_api, ApiExecutor, ApiExecutorRef, ApiResponse, ReqwestExecutor, StubExecutor};
+pub use ai::{evaluate_ai, AiRequest, AiResponse};
+pub use api::{
+    evaluate_api, ApiExecutor, ApiExecutorRef, ApiResponse, ReqwestExecutor, StubExecutor,
+};
 pub use formula::{evaluate_formula, FormulaEngine};
 pub use io::{evaluate_io, make_io_value};
 pub use listener::{evaluate_listener, fire_listener};
@@ -72,4 +75,3 @@ pub use router::evaluate_router;
 pub use sensor::{evaluate_sensor, make_sensor_value};
 pub use value::evaluate_value;
 pub use vision::{evaluate_vision, VisionBackend, VisionRequest, VisionResponse, VisionTask};
-pub use ai::{evaluate_ai, AiRequest, AiResponse};

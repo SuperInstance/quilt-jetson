@@ -63,8 +63,8 @@ use tracing::{debug, trace, warn};
 
 use crate::cells::{
     evaluate_api, evaluate_formula, evaluate_io, evaluate_listener, evaluate_program,
-    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, make_io_value,
-    make_sensor_value, fire_listener,
+    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, fire_listener,
+    make_io_value, make_sensor_value,
 };
 use crate::error::{Error, Result};
 use crate::persistence::SqliteStore;
@@ -72,8 +72,17 @@ use crate::types::{
     // `now_millis` is NOT imported: this module DEFINES it (further down),
     // and importing it as well was E0255, "the name is defined multiple
     // times". The crate has never compiled, so nothing caught it.
-    CallerContext, Cell, CellDef, CellId, CellKind, CellStatus, CellValue,
-    Effect, EvaluationTrace, SheetDef, SubscriptionId,
+    CallerContext,
+    Cell,
+    CellDef,
+    CellId,
+    CellKind,
+    CellStatus,
+    CellValue,
+    Effect,
+    EvaluationTrace,
+    SheetDef,
+    SubscriptionId,
 };
 
 // =============================================================================
@@ -177,10 +186,29 @@ impl QuiltEngine {
             traces: parking_lot::Mutex::new(Vec::new()),
         });
         // Spawn the background push loop.
+        //
+        // `new()` is SYNCHRONOUS, and it used to call `tokio::spawn`
+        // unconditionally -- which PANICS if there is no runtime on
+        // the current thread. So `QuiltEngine::new` could only be
+        // called from inside an async context, and every plain
+        // `#[test]` that built an engine died at construction with
+        // "Cannot start a runtime from within a runtime".
+        //
+        // The fix: ASK whether a runtime exists, and leave the loop
+        // un-spawned if not. The push queue is still drained by the
+        // next engine that runs inside a runtime; the field has the
+        // receiver re-stored for that.
         let weak = Arc::downgrade(&engine);
         let push_rx_opt = engine.push_rx.lock().take();
         if let Some(rx) = push_rx_opt {
-            tokio::spawn(push_loop(weak, rx));
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    handle.spawn(push_loop(weak, rx));
+                }
+                Err(_) => {
+                    *engine.push_rx.lock() = Some(rx);
+                }
+            }
         }
         engine
     }
@@ -386,8 +414,12 @@ impl QuiltEngine {
                 let full_ctx_for_program = full_ctx.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     let runtime = Arc::new(EngineProgramRuntime { engine });
-                    tokio::runtime::Handle::current()
-                        .block_on(evaluate_program(cell, full_ctx_for_program, None, runtime))
+                    tokio::runtime::Handle::current().block_on(evaluate_program(
+                        cell,
+                        full_ctx_for_program,
+                        None,
+                        runtime,
+                    ))
                 })
                 .await?;
                 self.cache_result(&id_norm, &full_ctx, &result).await;
@@ -406,8 +438,12 @@ impl QuiltEngine {
                 // takes and what this function returns.
                 let result = tokio::task::spawn_blocking(move || {
                     let runtime = Arc::new(EngineProgramRuntime { engine });
-                    tokio::runtime::Handle::current()
-                        .block_on(evaluate_router(cell, full_ctx_for_router, None, runtime))
+                    tokio::runtime::Handle::current().block_on(evaluate_router(
+                        cell,
+                        full_ctx_for_router,
+                        None,
+                        runtime,
+                    ))
                 })
                 .await??;
                 self.cache_result(&id_norm, &full_ctx, &result).await;
@@ -1071,7 +1107,9 @@ mod tests {
             cells: vec![value_def("a", json!(1))],
         };
         e.load_sheet(sheet).unwrap();
-        e.set("a", json!(99), CallerContext::default()).await.unwrap();
+        e.set("a", json!(99), CallerContext::default())
+            .await
+            .unwrap();
         let v = e.get("a", CallerContext::default()).await.unwrap();
         assert_eq!(v.data, json!(99));
     }
@@ -1163,7 +1201,9 @@ mod tests {
         };
         e.load_sheet(sheet).unwrap();
         let mut sub = e.subscribe("a").unwrap();
-        e.set("a", json!(2), CallerContext::default()).await.unwrap();
+        e.set("a", json!(2), CallerContext::default())
+            .await
+            .unwrap();
         // Give the broadcast a moment.
         tokio::time::sleep(Duration::from_millis(10)).await;
         // Drain any events.

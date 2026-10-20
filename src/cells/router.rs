@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use crate::cells::ProgramRuntime;
 use crate::error::{Error, Result};
-use crate::types::{Cell, CellStatus, CellValue, CallerContext, RouteTarget, RouterRule};
+use crate::types::{CallerContext, Cell, CellStatus, CellValue, RouteTarget, RouterRule};
 
 /// Evaluate a router cell. Walks the rules in order; the first one
 /// whose `when` evaluates truthy wins. Delegates the call to the
@@ -42,7 +42,11 @@ pub async fn evaluate_router(
     runtime: Arc<dyn ProgramRuntime>,
 ) -> Result<CellValue> {
     if cell.def.rules.is_empty() {
-        return Ok(CellValue::err("router cell has no rules"));
+        // The test expects this to be a CONFIGURATION error, not a
+        // value-typed `Ok(CellValue::err(...))`. A router with no rules
+        // is malformed, and `evaluate_router` returns `Result<CellValue,
+        // Error>`, so the channel that says so is `Err`.
+        return Err(crate::error::Error::RouterNoRules);
     }
     for rule in &cell.def.rules {
         if rule_matches(rule, &ctx) {

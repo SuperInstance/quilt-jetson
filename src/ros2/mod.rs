@@ -48,8 +48,8 @@
 //! - The CLI binary's `serve` subcommand, when configured with a
 //!   sheet that has `sensor` cells with `source: ros2:...`.
 
-pub mod subscriber;
 pub mod publisher;
+pub mod subscriber;
 
 pub use publisher::Ros2Publisher;
 pub use subscriber::Ros2Subscriber;
@@ -110,7 +110,9 @@ impl Ros2Bridge {
     /// Create a new stub bridge. Useful for development on a
     /// machine without ROS2 installed.
     pub fn stub() -> Self {
-        Self { mode: BridgeMode::Stub }
+        Self {
+            mode: BridgeMode::Stub,
+        }
     }
 
     /// The bridge mode.
@@ -209,10 +211,8 @@ mod tests {
 
     #[test]
     fn topic_info_with_qos() {
-        let info = TopicInfo::from_source(
-            "ros2:/imu/data:sensor_msgs/msg/Imu:sensor_data",
-        )
-        .unwrap();
+        let info =
+            TopicInfo::from_source("ros2:/imu/data:sensor_msgs/msg/Imu:sensor_data").unwrap();
         assert_eq!(info.name, "/imu/data");
         assert_eq!(info.message_type, "sensor_msgs/msg/Imu");
         assert_eq!(info.qos, "sensor_data");

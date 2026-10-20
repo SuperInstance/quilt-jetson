@@ -69,7 +69,9 @@ async fn full_lifecycle() {
     assert_eq!(product.data, json!(12));
 
     // Update a dependency.
-    e.set("a", json!(10), CallerContext::default()).await.unwrap();
+    e.set("a", json!(10), CallerContext::default())
+        .await
+        .unwrap();
 
     // Re-evaluate; the formula should reflect the new value.
     let sum = e.get("sum", CallerContext::default()).await.unwrap();
@@ -116,7 +118,9 @@ async fn subscribe_to_changes() {
     e.load_sheet(sheet).await.unwrap();
 
     let sub = e.subscribe("a").unwrap();
-    e.set("a", json!(2), CallerContext::default()).await.unwrap();
+    e.set("a", json!(2), CallerContext::default())
+        .await
+        .unwrap();
     // Drain a few events.
     tokio::time::sleep(Duration::from_millis(10)).await;
     let _event: Option<SubscriptionEvent> = sub.rx.try_recv().ok();
@@ -138,8 +142,12 @@ async fn subscribe_all_receives_changes() {
     e.load_sheet(sheet).await.unwrap();
 
     let _sub = e.subscribe_all();
-    e.set("a", json!(3), CallerContext::default()).await.unwrap();
-    e.set("b", json!(4), CallerContext::default()).await.unwrap();
+    e.set("a", json!(3), CallerContext::default())
+        .await
+        .unwrap();
+    e.set("b", json!(4), CallerContext::default())
+        .await
+        .unwrap();
     // The broadcast events are not tested here, but the API doesn't
     // panic.
 }

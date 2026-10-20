@@ -136,7 +136,10 @@ pub fn make_router(state: Arc<AppState>) -> Router {
 
 /// `GET /`
 async fn root() -> Response {
-    match include_str!("static/index.html").to_string().into_response() {
+    match include_str!("static/index.html")
+        .to_string()
+        .into_response()
+    {
         r => r,
     }
 }
@@ -189,7 +192,9 @@ async fn post_sheet(
         return Err(ApiError::bad_request(json!({"error": e.to_string()})));
     }
     *state.sheet.write() = Some(sheet);
-    Ok(Json(json!({"ok": true, "cell_count": state.engine.list_ids().len()})))
+    Ok(Json(
+        json!({"ok": true, "cell_count": state.engine.list_ids().len()}),
+    ))
 }
 
 /// `GET /api/cells` — list of cell ids.
@@ -266,10 +271,7 @@ async fn get_cell_history(
 }
 
 /// `GET /ws` — WebSocket for live events.
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
     let rx = state.engine.subscribe_events();
     ws.on_upgrade(move |socket| ws_loop(socket, rx))
 }
@@ -349,9 +351,11 @@ mod tests {
         // We can't await in a sync test, so spawn a task.
         let engine_clone = engine.clone();
         let sheet_clone = sheet.clone();
-        let _ = tokio::runtime::Handle::current().spawn(async move {
-            let _ = engine_clone.load_sheet(sheet_clone);
-        });
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = engine_clone.load_sheet(sheet_clone);
+            });
+        }
         engine
     }
 

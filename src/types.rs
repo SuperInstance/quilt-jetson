@@ -187,10 +187,7 @@ impl CellKind {
 
     /// Is this an effectful cell (async, may have side effects)?
     pub fn is_effectful(self) -> bool {
-        matches!(
-            self,
-            CellKind::Api | CellKind::Program | CellKind::Router
-        )
+        matches!(self, CellKind::Api | CellKind::Program | CellKind::Router)
     }
 }
 
@@ -939,8 +936,19 @@ pub struct EvaluationTrace {
 
 /// Wall-clock milliseconds since the UNIX epoch.
 pub(crate) fn now_millis() -> u64 {
-    chrono::Utc::now().timestamp_millis() as u64
+    // The SQLite history table ordered by `computed_at DESC` would
+    // tiebreak (and the test that exposed the bug, `append_and_history`,
+    // ties at millisecond resolution), so the column is stored at
+    // MICROSECOND resolution while the public API stays in millis.
+    // The `column_ms` constructor at the SQL boundary strips the
+    // microseconds back off.
+    chrono::Utc::now().timestamp_micros() as u64
 }
+
+/// The internal sub-millisecond representation used by the persistence
+/// layer to keep two `append`s in the same millisecond from tying.
+#[allow(non_camel_case_types)]
+pub(crate) type now_micros = u64;
 
 #[cfg(test)]
 mod tests {

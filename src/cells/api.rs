@@ -120,7 +120,10 @@ async fn response_to_apiresponse(resp: Response) -> Result<ApiResponse> {
     let status_text = status.canonical_reason().unwrap_or("").to_string();
     let mut headers = BTreeMap::new();
     for (k, v) in resp.headers().iter() {
-        headers.insert(k.as_str().to_lowercase(), v.to_str().unwrap_or("").to_string());
+        headers.insert(
+            k.as_str().to_lowercase(),
+            v.to_str().unwrap_or("").to_string(),
+        );
     }
     let content_type = headers.get("content-type").cloned().unwrap_or_default();
     let body_text = resp.text().await?;
@@ -238,10 +241,7 @@ pub async fn evaluate_api(
             computed_at: Some(now_millis()),
             error: None,
             effects: vec![
-                Effect::Network {
-                    url,
-                    method,
-                },
+                Effect::Network { url, method },
                 Effect::Compute { ms: duration },
             ],
         },
@@ -361,13 +361,7 @@ mod tests {
     #[tokio::test]
     async fn model_pseudo_endpoint_returns_synthetic() {
         let cell = api_cell("model:gpt-4o");
-        let v = evaluate_api(
-            cell,
-            crate::types::CallerContext::default(),
-            None,
-            None,
-        )
-        .await;
+        let v = evaluate_api(cell, crate::types::CallerContext::default(), None, None).await;
         assert_eq!(v.status, CellStatus::Ready);
         assert_eq!(v.data["model"], "gpt-4o");
     }
@@ -375,13 +369,7 @@ mod tests {
     #[tokio::test]
     async fn mcp_pseudo_endpoint_returns_synthetic() {
         let cell = api_cell("mcp://server/tool");
-        let v = evaluate_api(
-            cell,
-            crate::types::CallerContext::default(),
-            None,
-            None,
-        )
-        .await;
+        let v = evaluate_api(cell, crate::types::CallerContext::default(), None, None).await;
         assert_eq!(v.status, CellStatus::Ready);
         assert!(v.data["tool"].as_str().unwrap().contains("mcp://"));
     }
@@ -389,13 +377,7 @@ mod tests {
     #[tokio::test]
     async fn tensorrt_endpoint_returns_error_from_here() {
         let cell = api_cell("tensorrt:///opt/models/yolo.engine");
-        let v = evaluate_api(
-            cell,
-            crate::types::CallerContext::default(),
-            None,
-            None,
-        )
-        .await;
+        let v = evaluate_api(cell, crate::types::CallerContext::default(), None, None).await;
         // This should error because the engine is supposed to route
         // tensorrt:// to the vision evaluator.
         assert!(v.is_error());
@@ -409,13 +391,7 @@ mod tests {
             endpoint: None,
             ..Default::default()
         });
-        let v = evaluate_api(
-            cell,
-            crate::types::CallerContext::default(),
-            None,
-            None,
-        )
-        .await;
+        let v = evaluate_api(cell, crate::types::CallerContext::default(), None, None).await;
         assert_eq!(v.status, CellStatus::Error);
     }
 

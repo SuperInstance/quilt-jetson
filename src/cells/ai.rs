@@ -126,7 +126,11 @@ pub struct AiUsage {
 /// The `input` is the user message. If it's a string, it's wrapped
 /// in a single `user` message. If it's an array, each element is
 /// treated as a message.
-pub async fn evaluate_ai(cell: Cell, _ctx: crate::types::CallerContext, input: Option<Value>) -> CellValue {
+pub async fn evaluate_ai(
+    cell: Cell,
+    _ctx: crate::types::CallerContext,
+    input: Option<Value>,
+) -> CellValue {
     let started = now_millis();
     let endpoint = match &cell.def.endpoint {
         Some(e) => e.clone(),

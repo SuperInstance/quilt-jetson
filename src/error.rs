@@ -43,6 +43,10 @@ pub enum Error {
     #[error("cell already defined: {0}")]
     CellAlreadyDefined(String),
 
+    /// A Router cell was defined with no rules.
+    #[error("router cell has no rules")]
+    RouterNoRules,
+
     /// A cell definition is invalid (kind-specific required field
     /// missing, etc).
     #[error("invalid cell definition '{id}': {message}")]
@@ -216,8 +220,7 @@ mod tests {
     #[test]
     fn from_yaml_error() {
         // Construct a serde_yaml error via roundtrip of invalid data.
-        let res: std::result::Result<serde_yaml::Value, _> =
-            serde_yaml::from_str("a: b: c");
+        let res: std::result::Result<serde_yaml::Value, _> = serde_yaml::from_str("a: b: c");
         let yaml_err = res.unwrap_err();
         let e: Error = yaml_err.into();
         assert!(matches!(e, Error::Yaml(_)));

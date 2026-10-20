@@ -40,7 +40,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::{SqlitePoolOptions, SqliteConnectOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Row, Sqlite};
 use tokio::sync::Mutex;
 
@@ -140,7 +140,8 @@ impl SqliteStore {
     /// Append a cell value to the history.
     pub async fn append(&self, cell_id: &str, value: &CellValue) -> crate::error::Result<()> {
         let value_str = serde_json::to_string(&value.data).unwrap_or_else(|_| "null".to_string());
-        let effects_str = serde_json::to_string(&value.effects).unwrap_or_else(|_| "[]".to_string());
+        let effects_str =
+            serde_json::to_string(&value.effects).unwrap_or_else(|_| "[]".to_string());
         let status_str = value.status.as_str();
         let computed_at = value.computed_at.unwrap_or(0);
         let _guard = self.write_lock.lock().await;

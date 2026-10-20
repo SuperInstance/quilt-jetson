@@ -16,13 +16,25 @@
 //!
 //! - `crate::engine` — dispatches to this on `get` for `value` cells.
 
-use crate::types::{Cell, CellValue, CallerContext};
+use crate::types::{CallerContext, Cell, CellValue};
 
 /// Evaluate a value cell. Returns the static data from the cell
 /// definition wrapped in a `Ready` `CellValue`.
 ///
 /// The caller context is ignored — value cells are context-free.
 pub fn evaluate_value(cell: &Cell, _ctx: &CallerContext) -> CellValue {
+    // A Value cell's RUNTIME state lives on `cell.value`, not in the
+    // sheet definition. `set` updates `cell.value` and flips its status
+    // away from `Idle`; the test `set_then_get_returns_set_value` set
+    // 99 and got 1, because the function was reading the SHEET-DEFINED
+    // value (1) and ignoring the runtime value (99).
+    //
+    // The `def.value` path is for the *initial* value when the sheet
+    // is loaded (status == Idle, no runtime state). After that,
+    // `cell.value` is the source of truth.
+    if !matches!(cell.value.status, crate::types::CellStatus::Idle) {
+        return cell.value.clone();
+    }
     match &cell.def.value {
         Some(v) => CellValue {
             data: v.clone(),

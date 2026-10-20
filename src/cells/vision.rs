@@ -382,7 +382,11 @@ pub fn iou(a: &BoundingBox, b: &BoundingBox) -> f64 {
 /// Non-Maximum Suppression — remove overlapping detections.
 pub fn nms(mut detections: Vec<Detection>, iou_threshold: f64) -> Vec<Detection> {
     // Sort by confidence descending.
-    detections.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    detections.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut keep = Vec::new();
     while let Some(best) = detections.first().cloned() {
         keep.push(best.clone());
@@ -482,21 +486,46 @@ mod tests {
 
     #[test]
     fn iou_identical_boxes_is_one() {
-        let a = BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
+        let a = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
         assert!((iou(&a, &a) - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn iou_disjoint_is_zero() {
-        let a = BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
-        let b = BoundingBox { x: 20.0, y: 20.0, width: 10.0, height: 10.0 };
+        let a = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
+        let b = BoundingBox {
+            x: 20.0,
+            y: 20.0,
+            width: 10.0,
+            height: 10.0,
+        };
         assert_eq!(iou(&a, &b), 0.0);
     }
 
     #[test]
     fn iou_half_overlap() {
-        let a = BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
-        let b = BoundingBox { x: 5.0, y: 0.0, width: 10.0, height: 10.0 };
+        let a = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
+        let b = BoundingBox {
+            x: 5.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
         // Intersection: 5x10 = 50. Union: 100+100-50 = 150. IoU = 1/3.
         assert!((iou(&a, &b) - 1.0 / 3.0).abs() < 1e-9);
     }
@@ -505,19 +534,34 @@ mod tests {
     fn nms_removes_overlaps() {
         let detections = vec![
             Detection {
-                bbox: BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 },
+                bbox: BoundingBox {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
                 class_id: 0,
                 class_name: None,
                 confidence: 0.9,
             },
             Detection {
-                bbox: BoundingBox { x: 1.0, y: 1.0, width: 10.0, height: 10.0 },
+                bbox: BoundingBox {
+                    x: 1.0,
+                    y: 1.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
                 class_id: 0,
                 class_name: None,
                 confidence: 0.8,
             },
             Detection {
-                bbox: BoundingBox { x: 100.0, y: 100.0, width: 10.0, height: 10.0 },
+                bbox: BoundingBox {
+                    x: 100.0,
+                    y: 100.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
                 class_id: 1,
                 class_name: None,
                 confidence: 0.7,
@@ -557,7 +601,12 @@ mod tests {
     #[test]
     fn detection_serializes_with_all_fields() {
         let d = Detection {
-            bbox: BoundingBox { x: 1.0, y: 2.0, width: 3.0, height: 4.0 },
+            bbox: BoundingBox {
+                x: 1.0,
+                y: 2.0,
+                width: 3.0,
+                height: 4.0,
+            },
             class_id: 0,
             class_name: Some("person".into()),
             confidence: 0.95,
