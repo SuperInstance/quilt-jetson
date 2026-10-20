@@ -47,3 +47,9 @@ tarpaulin-report.html
 dist/
 build/
 out/
+
+# cargo-tarpaulin coverage artifacts. Measured on 2026-10-20: a coverage
+# run leaves one default_<pid>_0_<n>.profraw per test process in the
+# repository root. They are build output, not source.
+*.profraw
+

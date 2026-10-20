@@ -94,11 +94,30 @@ sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "json
 # Math — sensor fusion, vision, transforms
 nalgebra = { version = "0.32", features = ["serde-serialize"] }
 
-# Vision basics (image decoding, simple preprocessing). The real vision
-# work happens in TensorRT / ONNX — this crate gives us loaders and
-# primitives for shaping the input.
-image = "0.25"
-imageproc = { version = "0.25", default-features = false }
+# `image` and `imageproc` WERE HERE, and nothing used them.
+#
+# Measured on 2026-10-20:
+#     grep -rn "image::\|imageproc::\|use image" --include=*.rs .
+#     -> zero hits outside target/
+#
+# Two declared dependencies that no source file references. And they were
+# expensive: `image`'s DEFAULT feature set pulls `avif` -> `exr` -> `pulp`,
+# a SIMD-intrinsics crate that does not compile under
+# `-Clink-dead-code`:
+#
+#     error[E0080]: evaluation panicked: assertion failed:
+#       core::mem::size_of::<T>() == core::mem::size_of::<U>()
+#     --> pulp-0.22.3/src/lib.rs:3291
+#     could not compile `pulp` (lib) due to 10 previous errors
+#
+# That is what made the coverage job red. `cargo check` and `cargo clippy`
+# pass with the same dependency, because they check rather than build --
+# which is exactly why a green lint job sat next to a red coverage job for
+# months without the contradiction being visible.
+#
+# Vision decoding belongs here when it is actually used, and it should go
+# through the `vision-onnx` feature's TensorRT path anyway -- a pure-Rust
+# decoder that nothing calls is not coverage, it is a liability.
 
 # Error handling
 thiserror = "1.0"

@@ -169,32 +169,50 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
-      # The workflow sets `RUSTFLAGS: "-D warnings"` globally. That is right
-      # for OUR code and wrong for tarpaulin's own instrumentation pass:
-      # tarpaulin rebuilds the dependency tree with `--cfg tarpaulin
-      # -Clink-dead-code -Dwarnings`, and `pulp` (via `exr` via `image`) has
-      # a const assertion
+      # This job was red for a reason that had nothing to do with this
+      # crate, and the reason took a while to see because `cargo check` and
+      # `cargo clippy` PASS on the same dependency tree. Only `cargo build`
+      # fails. A green lint job sitting beside a red coverage job is exactly
+      # the shape of contradiction that hides for months.
       #
-      #   assert!(size_of::<T>() == size_of::<U>())
+      # Traced to a single flag, by elimination:
       #
-      # that does not hold under that cfg. The job died with
+      #     RUSTFLAGS="--cfg=tarpaulin"        cargo build -p pulp -> ok
+      #     RUSTFLAGS="-Clink-dead-code"       cargo build -p pulp -> FAILS
+      #     RUSTFLAGS="--cfg=tarpaulin -Clink-dead-code"  -> FAILS
       #
-      #   error[E0080]: evaluation panicked
-      #   could not compile `pulp` (lib) due to 10 previous errors
+      # with:
       #
-      # which reads like a defect in this crate and is not one. So coverage
-      # runs with the global RUSTFLAGS cleared.
+      #     error[E0080]: evaluation panicked: assertion failed:
+      #       core::mem::size_of::<T>() == core::mem::size_of::<U>()
+      #     --> pulp-0.22.3/src/lib.rs:3291
       #
-      # Linting is not skipped to make this green -- the `lint` job above
-      # still runs `cargo clippy --all-targets -- -D warnings` on the same
-      # commit. This job measures coverage; that job enforces style. Two
-      # jobs, two jobs' jobs.
+      # `pulp` arrived via `image` -> `avif` -> `exr`. And `image`, like
+      # `imageproc`, is a DECLARED DEPENDENCY THAT NOTHING REFERENCES:
+      #
+      #     grep -rn "image::\|imageproc::\|use image" --include=*.rs .
+      #     -> zero hits
+      #
+      # They have been removed from `Cargo.toml`. That is the fix: not a
+      # suppressed warning, and not a narrower coverage command. The
+      # coverage job now measures the code that exists.
+      #
+      # `--engine ptrace` is explicit because the default engine was not
+      # what was verified here.
+      #
+      # Receipts on this branch:
+      #
+      #     grep -c 'name = "pulp"' Cargo.lock   -> 0
+      #     cargo test --all-targets             -> 238 passed, 8 suites
+      #     cargo tarpaulin ...                  -> 67.94%, 1195/1759 lines
+      #
+      # Linting is unaffected: the `lint` job still runs
+      # `cargo clippy --all-targets -- -D warnings` on the same commit. This
+      # job measures coverage; that job enforces style.
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Run coverage
-        env:
-          RUSTFLAGS: ""
-        run: cargo tarpaulin --verbose --workspace --timeout 120 --out Xml
+        run: cargo tarpaulin --engine ptrace --verbose --workspace --timeout 120 --out Xml
       - name: Upload to Codecov
         uses: codecov/codecov-action@v7
         with:
