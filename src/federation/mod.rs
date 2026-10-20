@@ -72,7 +72,10 @@ impl RemoteCellRef {
 
     /// The full URI.
     pub fn uri(&self) -> String {
-        format!("quilt://{}/{}/{}#{}", self.instance, self.sheet, "", self.cell)
+        format!(
+            "quilt://{}/{}/{}#{}",
+            self.instance, self.sheet, "", self.cell
+        )
         // Note: a cleaner form is below; we keep the empty sheet
         // path here for parser round-tripping.
     }

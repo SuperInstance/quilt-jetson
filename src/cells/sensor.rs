@@ -27,7 +27,7 @@
 //!
 //! - `crate::engine` — dispatches to this on `get` for `sensor` cells.
 
-use crate::types::{now_millis, Cell, CellStatus, CellValue, CallerContext, Effect};
+use crate::types::{now_millis, CallerContext, Cell, CellStatus, CellValue, Effect};
 
 /// Evaluate a sensor cell. Returns the most recently pushed value.
 /// If no value has been pushed yet, returns the `default` from the

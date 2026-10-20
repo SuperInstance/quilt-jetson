@@ -24,7 +24,7 @@
 //!
 //! - `crate::engine` — dispatches to this on `get` for `io` cells.
 
-use crate::types::{now_millis, Cell, CellStatus, CellValue, CallerContext, Effect};
+use crate::types::{now_millis, CallerContext, Cell, CellStatus, CellValue, Effect};
 
 /// Evaluate an I/O cell. Returns the most recently pushed value.
 pub fn evaluate_io(cell: &Cell, _ctx: &CallerContext) -> CellValue {

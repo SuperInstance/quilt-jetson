@@ -126,7 +126,10 @@ cells:
     // The store should have a row for c.
     let store = engine.store().unwrap();
     let count = store.count("c").await.unwrap();
-    assert!(count >= 1, "expected at least 1 history row for c, got {count}");
+    assert!(
+        count >= 1,
+        "expected at least 1 history row for c, got {count}"
+    );
 }
 
 #[tokio::test]

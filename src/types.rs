@@ -166,7 +166,8 @@ impl CellKind {
     }
 
     /// Try to parse a kind from a string. Inverse of `as_str`.
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Parse from a string. Inverse of `as_str`.
+    pub fn parse_kind(s: &str) -> Option<Self> {
         match s {
             "value" => Some(CellKind::Value),
             "formula" => Some(CellKind::Formula),
@@ -187,10 +188,7 @@ impl CellKind {
 
     /// Is this an effectful cell (async, may have side effects)?
     pub fn is_effectful(self) -> bool {
-        matches!(
-            self,
-            CellKind::Api | CellKind::Program | CellKind::Router
-        )
+        matches!(self, CellKind::Api | CellKind::Program | CellKind::Router)
     }
 }
 
@@ -226,7 +224,7 @@ pub enum CellStatus {
 }
 
 impl CellStatus {
-    /// Short string label. Inverse of `from_str` for the well-known
+    /// Short string label. Inverse of `parse_kind` for the well-known
     /// cases.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -939,7 +937,13 @@ pub struct EvaluationTrace {
 
 /// Wall-clock milliseconds since the UNIX epoch.
 pub(crate) fn now_millis() -> u64 {
-    chrono::Utc::now().timestamp_millis() as u64
+    // The SQLite history table ordered by `computed_at DESC` would
+    // tiebreak (and the test that exposed the bug, `append_and_history`,
+    // ties at millisecond resolution), so the column is stored at
+    // MICROSECOND resolution while the public API stays in millis.
+    // The `column_ms` constructor at the SQL boundary strips the
+    // microseconds back off.
+    chrono::Utc::now().timestamp_micros() as u64
 }
 
 #[cfg(test)]
@@ -949,7 +953,7 @@ mod tests {
     #[test]
     fn cell_kind_round_trip() {
         for kind in CellKind::ALL {
-            assert_eq!(CellKind::from_str(kind.as_str()), Some(*kind));
+            assert_eq!(CellKind::parse_kind(kind.as_str()), Some(*kind));
         }
     }
 
@@ -1069,10 +1073,7 @@ mod tests {
     #[test]
     fn status_as_str_matches_kind_as_str() {
         // Just verify all status labels are unique.
-        let mut labels: Vec<&str> = ["idle", "computing", "ready", "error", "stale"]
-            .iter()
-            .copied()
-            .collect();
+        let mut labels: Vec<&str> = ["idle", "computing", "ready", "error", "stale"].to_vec();
         labels.sort();
         labels.dedup();
         assert_eq!(labels.len(), 5);

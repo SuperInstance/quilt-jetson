@@ -38,7 +38,7 @@
 //!   endpoints to this evaluator.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::error::{Error, Result};
 use crate::types::{now_millis, Cell, CellStatus, CellValue, Effect};
@@ -64,7 +64,8 @@ impl VisionTask {
             VisionTask::Segment => "segment",
         }
     }
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Parse from a string. Inverse of `as_str`.
+    pub fn parse_label(s: &str) -> Option<Self> {
         match s {
             "detect" => Some(VisionTask::Detect),
             "classify" => Some(VisionTask::Classify),
@@ -279,7 +280,7 @@ pub async fn evaluate_vision(cell: Cell, _ctx: crate::types::CallerContext) -> C
         .def
         .headers
         .get("task")
-        .and_then(|s| VisionTask::from_str(s))
+        .and_then(|s| VisionTask::parse_label(s))
         .unwrap_or(VisionTask::Detect);
 
     // Build the request. Image source defaults to the `source` field
@@ -382,7 +383,11 @@ pub fn iou(a: &BoundingBox, b: &BoundingBox) -> f64 {
 /// Non-Maximum Suppression — remove overlapping detections.
 pub fn nms(mut detections: Vec<Detection>, iou_threshold: f64) -> Vec<Detection> {
     // Sort by confidence descending.
-    detections.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    detections.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut keep = Vec::new();
     while let Some(best) = detections.first().cloned() {
         keep.push(best.clone());
@@ -392,11 +397,15 @@ pub fn nms(mut detections: Vec<Detection>, iou_threshold: f64) -> Vec<Detection>
     keep
 }
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{CellDef, CellKind};
-    use serde_json::json;
+    // `json` is not used in this test module.
 
     fn vision_cell(endpoint: &str) -> Cell {
         Cell::new(CellDef {
@@ -482,21 +491,46 @@ mod tests {
 
     #[test]
     fn iou_identical_boxes_is_one() {
-        let a = BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
+        let a = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
         assert!((iou(&a, &a) - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn iou_disjoint_is_zero() {
-        let a = BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
-        let b = BoundingBox { x: 20.0, y: 20.0, width: 10.0, height: 10.0 };
+        let a = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
+        let b = BoundingBox {
+            x: 20.0,
+            y: 20.0,
+            width: 10.0,
+            height: 10.0,
+        };
         assert_eq!(iou(&a, &b), 0.0);
     }
 
     #[test]
     fn iou_half_overlap() {
-        let a = BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 };
-        let b = BoundingBox { x: 5.0, y: 0.0, width: 10.0, height: 10.0 };
+        let a = BoundingBox {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
+        let b = BoundingBox {
+            x: 5.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        };
         // Intersection: 5x10 = 50. Union: 100+100-50 = 150. IoU = 1/3.
         assert!((iou(&a, &b) - 1.0 / 3.0).abs() < 1e-9);
     }
@@ -505,19 +539,34 @@ mod tests {
     fn nms_removes_overlaps() {
         let detections = vec![
             Detection {
-                bbox: BoundingBox { x: 0.0, y: 0.0, width: 10.0, height: 10.0 },
+                bbox: BoundingBox {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
                 class_id: 0,
                 class_name: None,
                 confidence: 0.9,
             },
             Detection {
-                bbox: BoundingBox { x: 1.0, y: 1.0, width: 10.0, height: 10.0 },
+                bbox: BoundingBox {
+                    x: 1.0,
+                    y: 1.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
                 class_id: 0,
                 class_name: None,
                 confidence: 0.8,
             },
             Detection {
-                bbox: BoundingBox { x: 100.0, y: 100.0, width: 10.0, height: 10.0 },
+                bbox: BoundingBox {
+                    x: 100.0,
+                    y: 100.0,
+                    width: 10.0,
+                    height: 10.0,
+                },
                 class_id: 1,
                 class_name: None,
                 confidence: 0.7,
@@ -532,10 +581,16 @@ mod tests {
 
     #[test]
     fn vision_task_round_trip() {
-        assert_eq!(VisionTask::from_str("detect"), Some(VisionTask::Detect));
-        assert_eq!(VisionTask::from_str("classify"), Some(VisionTask::Classify));
-        assert_eq!(VisionTask::from_str("segment"), Some(VisionTask::Segment));
-        assert_eq!(VisionTask::from_str("bogus"), None);
+        assert_eq!(VisionTask::parse_label("detect"), Some(VisionTask::Detect));
+        assert_eq!(
+            VisionTask::parse_label("classify"),
+            Some(VisionTask::Classify)
+        );
+        assert_eq!(
+            VisionTask::parse_label("segment"),
+            Some(VisionTask::Segment)
+        );
+        assert_eq!(VisionTask::parse_label("bogus"), None);
         assert_eq!(VisionTask::Detect.as_str(), "detect");
     }
 
@@ -557,7 +612,12 @@ mod tests {
     #[test]
     fn detection_serializes_with_all_fields() {
         let d = Detection {
-            bbox: BoundingBox { x: 1.0, y: 2.0, width: 3.0, height: 4.0 },
+            bbox: BoundingBox {
+                x: 1.0,
+                y: 2.0,
+                width: 3.0,
+                height: 4.0,
+            },
             class_id: 0,
             class_name: Some("person".into()),
             confidence: 0.95,

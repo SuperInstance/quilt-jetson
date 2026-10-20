@@ -62,15 +62,26 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, trace, warn};
 
 use crate::cells::{
-    evaluate_api, evaluate_formula, evaluate_io, evaluate_listener, evaluate_program,
-    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, make_io_value,
-    make_sensor_value, fire_listener,
+    evaluate_api, evaluate_formula, evaluate_io, evaluate_program, evaluate_router,
+    evaluate_sensor, evaluate_value, evaluate_vision, fire_listener, make_io_value,
+    make_sensor_value,
 };
 use crate::error::{Error, Result};
 use crate::persistence::SqliteStore;
 use crate::types::{
-    now_millis, CallerContext, Cell, CellDef, CellId, CellKind, CellStatus, CellValue,
-    Effect, EvaluationTrace, SheetDef, SubscriptionId,
+    // `now_millis` is NOT imported: this module DEFINES it (further down),
+    // and importing it as well was E0255, "the name is defined multiple
+    // times". The crate has never compiled, so nothing caught it.
+    CallerContext,
+    Cell,
+    CellDef,
+    CellId,
+    CellKind,
+    CellStatus,
+    CellValue,
+    EvaluationTrace,
+    SheetDef,
+    SubscriptionId,
 };
 
 // =============================================================================
@@ -174,10 +185,29 @@ impl QuiltEngine {
             traces: parking_lot::Mutex::new(Vec::new()),
         });
         // Spawn the background push loop.
+        //
+        // `new()` is SYNCHRONOUS, and it used to call `tokio::spawn`
+        // unconditionally -- which PANICS if there is no runtime on
+        // the current thread. So `QuiltEngine::new` could only be
+        // called from inside an async context, and every plain
+        // `#[test]` that built an engine died at construction with
+        // "Cannot start a runtime from within a runtime".
+        //
+        // The fix: ASK whether a runtime exists, and leave the loop
+        // un-spawned if not. The push queue is still drained by the
+        // next engine that runs inside a runtime; the field has the
+        // receiver re-stored for that.
         let weak = Arc::downgrade(&engine);
         let push_rx_opt = engine.push_rx.lock().take();
         if let Some(rx) = push_rx_opt {
-            tokio::spawn(push_loop(weak, rx));
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    handle.spawn(push_loop(weak, rx));
+                }
+                Err(_) => {
+                    *engine.push_rx.lock() = Some(rx);
+                }
+            }
         }
         engine
     }
@@ -319,16 +349,25 @@ impl QuiltEngine {
 
         match kind {
             CellKind::Value => {
-                let cells = self.cells.read();
-                let cell = cells.get(&id_norm).expect("checked above");
-                Ok(evaluate_value(cell, &full_ctx))
+                // The guard is scoped to its own block so it cannot be
+                // alive across an await -- a `parking_lot` guard is not
+                // `Send`, and holding one across an await makes the whole
+                // future not `Send`, which the async-trait runtime then
+                // rejects.
+                let value = {
+                    let cells = self.cells.read();
+                    let cell = cells.get(&id_norm).expect("checked above");
+                    evaluate_value(cell, &full_ctx)
+                };
+                Ok(value)
             }
             CellKind::Formula => {
                 // Build a snapshot of dep values.
                 let snapshot = self.build_formula_snapshot(&id_norm, &full_ctx).await;
-                let cells = self.cells.read();
-                let cell = cells.get(&id_norm).expect("checked above").clone();
-                drop(cells);
+                let cell = {
+                    let cells = self.cells.read();
+                    cells.get(&id_norm).expect("checked above").clone()
+                };
                 let result = tokio::task::spawn_blocking({
                     let cell = cell.clone();
                     let full_ctx = full_ctx.clone();
@@ -351,7 +390,10 @@ impl QuiltEngine {
                     } else {
                         tokio::time::timeout(
                             self.config.eval_timeout,
-                            evaluate_api(cell, full_ctx.clone(), None),
+                            // The fourth argument -- the executor override
+                            // -- was missing. `evaluate_api` has taken four
+                            // arguments; this call site passed three.
+                            evaluate_api(cell, full_ctx.clone(), None, None),
                         )
                         .await
                         .unwrap_or_else(|_| CellValue::err("api evaluation timed out"))
@@ -371,8 +413,12 @@ impl QuiltEngine {
                 let full_ctx_for_program = full_ctx.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     let runtime = Arc::new(EngineProgramRuntime { engine });
-                    tokio::runtime::Handle::current()
-                        .block_on(evaluate_program(cell, full_ctx_for_program, None, runtime))
+                    tokio::runtime::Handle::current().block_on(evaluate_program(
+                        cell,
+                        full_ctx_for_program,
+                        None,
+                        runtime,
+                    ))
                 })
                 .await?;
                 self.cache_result(&id_norm, &full_ctx, &result).await;
@@ -385,12 +431,20 @@ impl QuiltEngine {
                 };
                 let engine = self.clone();
                 let full_ctx_for_router = full_ctx.clone();
+                // `evaluate_router` returns a Result, `evaluate_program`
+                // does not. The extra `?` unwraps the inner Result so
+                // `result` is a CellValue, which is what `cache_result`
+                // takes and what this function returns.
                 let result = tokio::task::spawn_blocking(move || {
                     let runtime = Arc::new(EngineProgramRuntime { engine });
-                    tokio::runtime::Handle::current()
-                        .block_on(evaluate_router(cell, full_ctx_for_router, None, runtime))
+                    tokio::runtime::Handle::current().block_on(evaluate_router(
+                        cell,
+                        full_ctx_for_router,
+                        None,
+                        runtime,
+                    ))
                 })
-                .await?;
+                .await??;
                 self.cache_result(&id_norm, &full_ctx, &result).await;
                 Ok(result)
             }
@@ -450,7 +504,7 @@ impl QuiltEngine {
     pub async fn call(
         self: &Arc<Self>,
         id: &str,
-        input: Option<Value>,
+        _input: Option<Value>,
         ctx: CallerContext,
     ) -> Result<CellValue> {
         // For MVP, calling is the same as getting.
@@ -566,6 +620,7 @@ impl QuiltEngine {
     }
 
     /// Record a trace entry. Used by cell evaluators.
+    #[allow(dead_code)]
     pub(crate) fn record_trace(self: &Arc<Self>, trace: EvaluationTrace) {
         if !self.config.tracing {
             return;
@@ -611,7 +666,10 @@ impl QuiltEngine {
         // and sensor cells already have their value; skip them.)
         for (dep_id, kind) in &dep_kinds {
             if matches!(kind, CellKind::Formula | CellKind::Program) {
-                let _ = self.get(dep_id, caller_ctx.clone()).await;
+                // Boxed, for the same reason `propagate` is: a recursive
+                // async fn has an infinitely sized future unless the
+                // recursive CALL introduces indirection.
+                let _ = Box::pin(self.get(dep_id, caller_ctx.clone())).await;
             }
         }
 
@@ -718,8 +776,14 @@ impl QuiltEngine {
         }
 
         // Recurse.
+        //
+        // THE BOX IS THE POINT. A recursive `async fn` has an infinitely
+        // sized future unless the recursive CALL introduces indirection,
+        // and the compiler cannot see the recursion break otherwise. This
+        // is the crate's own dependency graph calling itself, and it has
+        // never compiled, so nothing ever noticed.
         for dep_id in &dependents {
-            self.propagate(dep_id, ctx).await;
+            Box::pin(self.propagate(dep_id, ctx)).await;
         }
     }
 
@@ -956,8 +1020,11 @@ fn expr_contains_token(expr: &str, id: &str) -> bool {
 
 // (Effect is in types.rs; we re-import here to keep the engine file
 // self-contained.)
-pub use crate::types::Effect as EngineEffect;
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1003,7 +1070,7 @@ mod tests {
             axes: None,
             cells: vec![value_def("a", json!(1)), value_def("b", json!(2))],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         assert_eq!(e.list_ids().len(), 2);
     }
 
@@ -1018,7 +1085,7 @@ mod tests {
             axes: None,
             cells: vec![value_def("a", json!(42))],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         let v = e.get("a", CallerContext::default()).await.unwrap();
         assert_eq!(v.data, json!(42));
         assert!(v.is_ready());
@@ -1042,8 +1109,10 @@ mod tests {
             axes: None,
             cells: vec![value_def("a", json!(1))],
         };
-        e.load_sheet(sheet).await.unwrap();
-        e.set("a", json!(99), CallerContext::default()).await.unwrap();
+        e.load_sheet(sheet).unwrap();
+        e.set("a", json!(99), CallerContext::default())
+            .await
+            .unwrap();
         let v = e.get("a", CallerContext::default()).await.unwrap();
         assert_eq!(v.data, json!(99));
     }
@@ -1063,7 +1132,7 @@ mod tests {
                 formula_def("sum", "=a + b"),
             ],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         let v = e.get("sum", CallerContext::default()).await.unwrap();
         assert_eq!(v.data, json!(7));
     }
@@ -1100,7 +1169,7 @@ mod tests {
                 ..Default::default()
             }],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         e.push("imu", json!({"x": 1.0})).await.unwrap();
         let v = e.get("imu", CallerContext::default()).await.unwrap();
         assert_eq!(v.data, json!({"x": 1.0}));
@@ -1117,7 +1186,7 @@ mod tests {
             axes: None,
             cells: vec![value_def("a", json!(1))],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         let r = e.push("a", json!(2)).await;
         assert!(r.is_err());
     }
@@ -1133,9 +1202,11 @@ mod tests {
             axes: None,
             cells: vec![value_def("a", json!(1))],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         let mut sub = e.subscribe("a").unwrap();
-        e.set("a", json!(2), CallerContext::default()).await.unwrap();
+        e.set("a", json!(2), CallerContext::default())
+            .await
+            .unwrap();
         // Give the broadcast a moment.
         tokio::time::sleep(Duration::from_millis(10)).await;
         // Drain any events.
@@ -1159,7 +1230,7 @@ mod tests {
             axes: None,
             cells: vec![value_def("a", json!(1)), value_def("b", json!(2))],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         assert_eq!(e.list_cells().len(), 2);
     }
 
@@ -1174,7 +1245,7 @@ mod tests {
             axes: None,
             cells: vec![value_def("a", json!(1))],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         let c = e.get_cell("a");
         assert!(c.is_some());
         assert_eq!(c.unwrap().id, "a");
@@ -1273,7 +1344,7 @@ mod tests {
                 ..Default::default()
             }],
         };
-        e.load_sheet(sheet).await.unwrap();
+        e.load_sheet(sheet).unwrap();
         let tx = e.push_sender();
         tx.send(PushRequest::new("imu", json!({"x": 1.0}))).unwrap();
         // Wait a tick for the background loop.

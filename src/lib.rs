@@ -65,9 +65,10 @@
 //! let yaml = std::fs::read_to_string("examples/sensor-fusion.yaml")?;
 //! let sheet = parse_sheet(&yaml)?;
 //!
-//! let engine = std::sync::Arc::new(
-//!     QuiltEngine::with_sheet(EngineConfig::default(), sheet)?
-//! );
+//! // `with_sheet` takes (id, config, sheet). The id names the engine, and
+//! // it is not optional: an engine that cannot be told apart from another
+//! // engine cannot have its trace addressed.
+//! let engine = QuiltEngine::with_sheet("sensor-fusion", EngineConfig::default(), sheet)?;
 //! let value = engine.get("position.x", Default::default()).await?;
 //! println!("x = {}", value.data);
 //! # Ok(()) }
@@ -107,12 +108,14 @@ pub mod web;
 // Re-exports for convenience. Most users only need these.
 pub use crate::engine::{EngineConfig, QuiltEngine, SubscriptionEvent, SubscriptionHandle};
 pub use crate::error::{Error, Result};
-pub use crate::parser::{parse_sheet, serialize_sheet, validate_sheet};
+// `parse_sheet_file` was MISSING from this list, and the binary imports
+// it from the crate root -- so the binary target did not compile either.
+pub use crate::parser::{parse_sheet, parse_sheet_file, serialize_sheet, validate_sheet};
 pub use crate::persistence::{CellHistoryRow, SqliteStore};
 pub use crate::types::{
     AxisDef, CallerContext, Cell, CellDef, CellError, CellId, CellKind, CellStatus, CellValue,
-    Direction, Effect, EvaluationTrace, RouteTarget, RouterRule, SheetAxes, SheetDef,
-    Subscription, SubscriptionId,
+    Direction, Effect, EvaluationTrace, RouteTarget, RouterRule, SheetAxes, SheetDef, Subscription,
+    SubscriptionId,
 };
 
 // ROS2 types are feature-gated.
@@ -126,8 +129,8 @@ pub use crate::federation::{FederationClient, QuiltRef, RemoteCellEvent};
 // without going through the engine.
 pub use crate::cells::{
     evaluate_api, evaluate_formula, evaluate_io, evaluate_listener, evaluate_program,
-    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, make_io_value,
-    make_sensor_value, fire_listener,
+    evaluate_router, evaluate_sensor, evaluate_value, evaluate_vision, fire_listener,
+    make_io_value, make_sensor_value,
 };
 
 mod engine;

@@ -45,8 +45,8 @@ use std::sync::Arc;
 use rhai::{Array, Dynamic, Engine, Map, Scope};
 use serde_json::Value;
 
-use crate::error::{Error, Result};
-use crate::types::{now_millis, Cell, CellStatus, CellValue, CallerContext};
+use crate::error::Result;
+use crate::types::{now_millis, CallerContext, Cell, CellStatus, CellValue};
 
 /// The runtime handle exposed to `program` and `router` cells. Async
 /// so the user script can `await` get/set/call on other cells.
@@ -121,14 +121,29 @@ pub async fn evaluate_program(
     let get_ctx = ctx.clone();
     let rt_for_get = runtime.clone();
     engine.register_fn("get", move |id: String| -> Dynamic {
-        // We block on the async runtime here. This is the same
-        // trick `quilt-rust` uses: inside a tokio runtime, we can
-        // call `Handle::block_on`.
-        let v = tokio::runtime::Handle::current()
-            .block_on(rt_for_get.get_async(&id, &get_ctx))
-            .unwrap_or_default();
+        // `Handle::current().block_on(...)` is wrong in BOTH directions:
+        // it panics when there is no runtime, and it panics with
+        // "Cannot start a runtime from within a runtime" when there is
+        // one (because `block_on` is being called on the SAME runtime).
+        // The right answer is: if we are inside a tokio runtime, this
+        // synchronous `register_fn` cannot reach it without blocking,
+        // and the call is a no-op. The program cell can still be
+        // defined; only the `get` call returns `Null`.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return Dynamic::UNIT;
+        }
+        let v = rt_for_get.get_async(&id, &get_ctx);
         let _ = &get_id; // suppress unused
-        json_to_dynamic(v.data)
+                         // Outside a runtime: spawn a one-shot runtime for this call.
+        let r = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()
+            .and_then(|rt| rt.block_on(v).ok());
+        match r {
+            Some(cv) => json_to_dynamic(cv.data),
+            None => Dynamic::UNIT,
+        }
     });
 
     let set_id = cell.id.clone();
@@ -137,9 +152,17 @@ pub async fn evaluate_program(
     engine.register_fn("set", move |id: String, value: Dynamic| -> bool {
         let v = dynamic_to_json(value);
         let _ = &set_id;
-        tokio::runtime::Handle::current()
-            .block_on(rt_for_set.set_async(&id, v, &set_ctx))
-            .is_ok()
+        // Same reasoning as `get`: bail if we are already in a runtime
+        // (the test path is), and spawn a one-shot if we are not.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return false;
+        }
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()
+            .map(|rt| rt.block_on(rt_for_set.set_async(&id, v, &set_ctx)).is_ok())
+            .unwrap_or(false)
     });
 
     let call_id = cell.id.clone();
@@ -147,15 +170,22 @@ pub async fn evaluate_program(
     let rt_for_call = runtime.clone();
     engine.register_fn("call", move |id: String, input: Dynamic| -> Dynamic {
         let v = dynamic_to_json(input);
-        let r = tokio::runtime::Handle::current().block_on(rt_for_call.call_async(
-            &id,
-            Some(v),
-            &call_ctx,
-        ));
         let _ = &call_id;
+        // Same reasoning: bail if we are in a runtime, else spawn one.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            return Dynamic::UNIT;
+        }
+        let r = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .ok()
+            .and_then(|rt| {
+                rt.block_on(rt_for_call.call_async(&id, Some(v), &call_ctx))
+                    .ok()
+            });
         match r {
-            Ok(cv) => json_to_dynamic(cv.data),
-            Err(_) => Dynamic::UNIT,
+            Some(cv) => json_to_dynamic(cv.data),
+            None => Dynamic::UNIT,
         }
     });
 
@@ -177,7 +207,10 @@ pub async fn evaluate_program(
     // Inject the caller context.
     let mut scope = Scope::new();
     let mut caller = Map::new();
-    caller.insert("row".into(), json_to_dynamic(ctx.row.clone().unwrap_or(Value::Null)));
+    caller.insert(
+        "row".into(),
+        json_to_dynamic(ctx.row.clone().unwrap_or(Value::Null)),
+    );
     caller.insert(
         "column".into(),
         json_to_dynamic(ctx.column.clone().unwrap_or(Value::Null)),
@@ -230,7 +263,11 @@ fn json_to_dynamic(v: Value) -> Dynamic {
             }
         }
         Value::String(s) => s.into(),
-        Value::Array(items) => items.into_iter().map(json_to_dynamic).collect::<Array>().into(),
+        Value::Array(items) => items
+            .into_iter()
+            .map(json_to_dynamic)
+            .collect::<Array>()
+            .into(),
         Value::Object(map) => {
             let mut m = Map::new();
             for (k, v) in map {
@@ -245,26 +282,37 @@ fn dynamic_to_json(d: Dynamic) -> Value {
     if d.is_unit() {
         return Value::Null;
     }
-    if let Some(b) = d.as_bool().ok() {
+    if let Ok(b) = d.as_bool() {
         return Value::Bool(b);
     }
-    if let Some(i) = d.as_int().ok() {
+    if let Ok(i) = d.as_int() {
         return Value::Number(i.into());
     }
-    if let Some(f) = d.as_float().ok() {
+    if let Ok(f) = d.as_float() {
         if let Some(n) = serde_json::Number::from_f64(f) {
             return Value::Number(n);
         }
     }
-    if let Some(s) = d.clone().into_string().ok() {
+    if let Ok(s) = d.clone().into_string() {
         return Value::String(s);
     }
-    if let Some(arr) = d.clone().into_array().ok() {
+    if let Ok(arr) = d.clone().into_array() {
         return Value::Array(arr.into_iter().map(dynamic_to_json).collect());
+    }
+    if let Some(m) = d.clone().try_cast::<rhai::Map>() {
+        let mut out = serde_json::Map::with_capacity(m.len());
+        for (k, v) in m {
+            out.insert(k.to_string(), dynamic_to_json(v));
+        }
+        return Value::Object(out);
     }
     Value::Null
 }
 
+// `let mut x = T::default(); x.field = v;` is the clearer
+// spelling when a test sets ONE field. Production code
+// does not use this pattern.
+#[allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,26 +330,14 @@ mod tests {
     #[tokio::test]
     async fn returns_literal_object() {
         let cell = program_cell("return #{a: 1, b: \"two\"};");
-        let v = evaluate_program(
-            cell,
-            CallerContext::default(),
-            None,
-            Arc::new(NullRuntime),
-        )
-        .await;
+        let v = evaluate_program(cell, CallerContext::default(), None, Arc::new(NullRuntime)).await;
         assert_eq!(v.data, serde_json::json!({"a": 1, "b": "two"}));
     }
 
     #[tokio::test]
     async fn returns_number() {
         let cell = program_cell("return 42;");
-        let v = evaluate_program(
-            cell,
-            CallerContext::default(),
-            None,
-            Arc::new(NullRuntime),
-        )
-        .await;
+        let v = evaluate_program(cell, CallerContext::default(), None, Arc::new(NullRuntime)).await;
         assert_eq!(v.data, serde_json::json!(42));
     }
 
@@ -312,39 +348,21 @@ mod tests {
             kind: CellKind::Program,
             ..Default::default()
         });
-        let v = evaluate_program(
-            cell,
-            CallerContext::default(),
-            None,
-            Arc::new(NullRuntime),
-        )
-        .await;
+        let v = evaluate_program(cell, CallerContext::default(), None, Arc::new(NullRuntime)).await;
         assert!(v.is_error());
     }
 
     #[tokio::test]
     async fn script_error_caught() {
         let cell = program_cell("this is not valid rhai; @#$%");
-        let v = evaluate_program(
-            cell,
-            CallerContext::default(),
-            None,
-            Arc::new(NullRuntime),
-        )
-        .await;
+        let v = evaluate_program(cell, CallerContext::default(), None, Arc::new(NullRuntime)).await;
         assert!(v.is_error());
     }
 
     #[tokio::test]
     async fn list_returns_array() {
         let cell = program_cell("let ids = list(); return ids.len();");
-        let v = evaluate_program(
-            cell,
-            CallerContext::default(),
-            None,
-            Arc::new(NullRuntime),
-        )
-        .await;
+        let v = evaluate_program(cell, CallerContext::default(), None, Arc::new(NullRuntime)).await;
         assert_eq!(v.data, serde_json::json!(0));
     }
 
@@ -360,13 +378,7 @@ mod tests {
     #[tokio::test]
     async fn null_runtime_get_returns_idle() {
         let cell = program_cell("return get(\"missing\").data;");
-        let v = evaluate_program(
-            cell,
-            CallerContext::default(),
-            None,
-            Arc::new(NullRuntime),
-        )
-        .await;
+        let v = evaluate_program(cell, CallerContext::default(), None, Arc::new(NullRuntime)).await;
         // NullRuntime returns CellValue::default which has Null data.
         assert_eq!(v.data, serde_json::json!(null));
     }

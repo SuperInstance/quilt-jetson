@@ -7,7 +7,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](.)
 [![Jetson](https://img.shields.io/badge/jetson-Orin%20%7C%20Nano%20%7C%20AGX-76b900)](.)
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-22314E)](.)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](.)
+[![CI](https://github.com/SuperInstance/quilt-jetson/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/SuperInstance/quilt-jetson/actions/workflows/ci.yml)
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -113,7 +113,7 @@ cargo build --release --features vision-onnx
 
 ```bash
 # 1. Get an example sheet
-curl -L https://raw.githubusercontent.com/SuperInstance/quilt-jetson/main/examples/sensor-fusion.yaml -o sheet.yaml
+curl -L https://raw.githubusercontent.com/SuperInstance/quilt-jetson/master/examples/sensor-fusion.yaml -o sheet.yaml
 
 # 2. (Optional) install the .deb for systemd integration
 sudo dpkg -i quilt-jetson_*.deb
@@ -402,13 +402,73 @@ in the main `quilt` repo. The key elements:
 - L2 Build — `Cargo.toml` with pinned versions, single command
   to build (`cargo build`) and test (`cargo test`).
 - L3 Test — 100+ unit tests across 11 modules, 4 integration
-  test files, CI runs on every push.
+  test files. CI runs on every push to `master` and on every
+  pull request that targets `master`. Pushes to other branches
+  deliberately do not trigger a run: the pull request is the
+  gate, not the topic branch.
 - L4 Quality — heavy header comments, `cargo clippy -D warnings`,
   no unsafe, public API documented.
 - L5 Docs — this README plus 4 docs/ files with diagrams.
 - L6 Release — `.github/workflows/release.yml` cross-compiles
   to aarch64 and builds a Debian package.
 - L7 Operations — dependabot, issue templates (via .github/).
+- L8 Supply chain — **known exposure, not yet fixed.** All 31
+  `uses:` references across this repository's 3 workflow files
+  float on a tag or branch (`@v7`, `@stable`, `@1.75`), and
+  **0 of 31 are pinned to a commit SHA**. A tag can be moved, so
+  what a workflow executes is not fixed by the commit the workflow
+  lives in. Pin each workflow as you touch it; a bulk conversion to
+  SHAs nobody has audited would be a worse trade than an honest
+  floating tag.
+
+## Continuous integration
+
+The badge at the top of this file is not a label. It is
+`actions/workflows/ci.yml/badge.svg?branch=master`, which asks
+GitHub for the status of the most recent `ci` run on `master` and
+renders whatever that status actually is — including *failing*, and
+including *no status* before anything has run.
+
+What `ci` does, and what it does not:
+
+| Trigger | Runs? |
+|---------|-------|
+| Push to `master` | yes |
+| Pull request targeting `master` | yes |
+| Push to any other branch | **no** |
+| Pull request targeting another branch | **no** |
+
+The last two rows are deliberate. The pull request is the gate; a
+topic branch is not. The six jobs are `Lint & format`, `Test
+(ubuntu-latest, x86_64)`, `Cross-compile
+(aarch64-unknown-linux-gnu)`, `Coverage`, `Validate example sheets`
+and `MSRV (1.75)`. All six run on `ubuntu-latest`; there is no
+macOS or Windows runner in this matrix.
+
+### Why there is a second workflow
+
+Until the four CI defects were fixed, `ci.yml` listened for `main`
+while this repository's default branch is `master` and no `main`
+branch has ever existed. It therefore matched no push and no pull
+request, and had produced **zero runs in its entire history** —
+while the badge above it claimed CI was passing. A branch filter
+that cannot match is a green badge over zero jobs.
+
+`.github/workflows/ci-trigger-guard.yml` now asserts that on every
+push and every pull request: it reads `default_branch` and the
+branch list from the GitHub API, and fails if any workflow's
+`branches:` filter omits the default branch, names a branch that
+does not exist without declaring it in `.github/branch-aliases.txt`,
+or if the badge above stops pointing at `ci.yml` on the default
+branch. Its own triggers carry no branch filter, on purpose — a
+guard that shares the filter it guards cannot fire when that filter
+breaks. `tests/ci_triggers.rs` asserts the same invariants offline,
+so they are checked by `cargo test` as well.
+
+The guard fails *closed*: if the API cannot be reached it exits
+non-zero rather than reporting success, because a guard that passes
+because it could not measure is the same defect wearing a different
+hat.
 
 ## License
 

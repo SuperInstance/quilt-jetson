@@ -8,7 +8,29 @@ edition = "2021"
 # this job was still called "MSRV (1.75)". The name and the toolchain
 # disagreed, and the disagreement was invisible until the job tried
 # to download a toolchain that had never been released.
-rust-version = "1.75"
+  # MSRV, measured rather than guessed. The previous value was 1.75 and it
+  # was FALSE from the day it was written.
+  #
+  # `rust-version` describes OUR crate. It does not describe our
+  # dependencies, and the dependencies float. `indexmap = "2"` resolves to
+  # 2.14.2, whose manifest declares `edition2024` -- a Cargo feature that
+  # did not exist in 1.75, so cargo cannot even PARSE it. We measured the
+  # floor by bisecting real toolchains against this exact lockfile:
+  #
+  #   1.75  -> error: feature `edition2024` is required
+  #   1.85  -> icu_normalizer@2.3.0 requires rustc 1.88
+  #   1.88  -> uuid@1.28.0 requires rustc 1.89.0
+  #   1.89  -> Finished `dev` profile        <-- the floor
+  #
+  # 1.89 is the minimum that builds this dependency set, so that is what
+  # is declared. The CI job is pinned to the same number by
+  # `tests/msrv_matches_manifest.rs`, which reads this field and compares
+  # it to the toolchain the workflow installs -- so the two cannot drift
+  # apart a second time.
+  #
+  # A declared MSRV is a boundary claim. A wrong one is a defect, not a
+  # conservative default.
+  rust-version = "1.89"
 description = "Quilt reactive runtime for NVIDIA Jetson devices — edge ML, ROS2, vision, federation"
 license = "Apache-2.0"
 authors = ["The Quilt Authors"]
@@ -48,7 +70,14 @@ rhai = { version = "1.20", features = ["sync", "serde"] }
 
 # Web server + federation transport
 axum = { version = "0.7", features = ["ws", "macros"] }
-tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+# `rustls-tls`, not `native-tls`, and this is a Jetson repo.
+# `native-tls` pulls in `openssl-sys`, which needs a system OpenSSL for the
+# TARGET. That made the aarch64 cross job die in `openssl-sys`'s build
+# script with "Package 'openssl' ... not found" -- an environment failure
+# masquerading as a code failure. `reqwest` in this manifest already chose
+# `rustls-tls`; the websocket client was the odd one out. Rustls is pure
+# Rust, so it cross-compiles without a target sysroot.
+tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
 tower = "0.5"
 tower-http = { version = "0.5", features = ["fs", "trace"] }
 
@@ -65,11 +94,30 @@ sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "json
 # Math — sensor fusion, vision, transforms
 nalgebra = { version = "0.32", features = ["serde-serialize"] }
 
-# Vision basics (image decoding, simple preprocessing). The real vision
-# work happens in TensorRT / ONNX — this crate gives us loaders and
-# primitives for shaping the input.
-image = "0.25"
-imageproc = { version = "0.25", default-features = false }
+# `image` and `imageproc` WERE HERE, and nothing used them.
+#
+# Measured on 2026-10-20:
+#     grep -rn "image::\|imageproc::\|use image" --include=*.rs .
+#     -> zero hits outside target/
+#
+# Two declared dependencies that no source file references. And they were
+# expensive: `image`'s DEFAULT feature set pulls `avif` -> `exr` -> `pulp`,
+# a SIMD-intrinsics crate that does not compile under
+# `-Clink-dead-code`:
+#
+#     error[E0080]: evaluation panicked: assertion failed:
+#       core::mem::size_of::<T>() == core::mem::size_of::<U>()
+#     --> pulp-0.22.3/src/lib.rs:3291
+#     could not compile `pulp` (lib) due to 10 previous errors
+#
+# That is what made the coverage job red. `cargo check` and `cargo clippy`
+# pass with the same dependency, because they check rather than build --
+# which is exactly why a green lint job sat next to a red coverage job for
+# months without the contradiction being visible.
+#
+# Vision decoding belongs here when it is actually used, and it should go
+# through the `vision-onnx` feature's TensorRT path anyway -- a pure-Rust
+# decoder that nothing calls is not coverage, it is a liability.
 
 # Error handling
 thiserror = "1.0"

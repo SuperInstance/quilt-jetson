@@ -18,7 +18,6 @@
 //!   (CLI, examples) — libraries should use the typed `Result`.
 
 use std::io;
-use std::path::PathBuf;
 
 /// The crate-level result alias. Use this in fallible APIs.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -42,6 +41,10 @@ pub enum Error {
     /// A cell id is already in use.
     #[error("cell already defined: {0}")]
     CellAlreadyDefined(String),
+
+    /// A Router cell was defined with no rules.
+    #[error("router cell has no rules")]
+    RouterNoRules,
 
     /// A cell definition is invalid (kind-specific required field
     /// missing, etc).
@@ -216,8 +219,7 @@ mod tests {
     #[test]
     fn from_yaml_error() {
         // Construct a serde_yaml error via roundtrip of invalid data.
-        let res: std::result::Result<serde_yaml::Value, _> =
-            serde_yaml::from_str("a: b: c");
+        let res: std::result::Result<serde_yaml::Value, _> = serde_yaml::from_str("a: b: c");
         let yaml_err = res.unwrap_err();
         let e: Error = yaml_err.into();
         assert!(matches!(e, Error::Yaml(_)));
@@ -265,6 +267,7 @@ mod tests {
 
     #[test]
     fn file_path_error_converts() {
+        use std::path::PathBuf;
         // PathBuf::open would give a NotFound, but we just want to
         // exercise the from<io::Error> path.
         let _p: PathBuf = "/nope".into();

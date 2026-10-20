@@ -1,10 +1,23 @@
 name: ci
 
 on:
+  # These triggers used to say `main`. This repository's default branch is
+  # `master` and no `main` branch has ever existed, so ci.yml matched no push and
+  # no pull request and had produced exactly zero runs. The hardcoded
+  # "CI: passing" badge in the README was the only thing asserting CI was green.
+  #
+  # `master` is the default branch and is what gates CI. `main` is declared in
+  # .github/branch-aliases.txt, so this workflow survives the fleet-wide branch
+  # convention either way; a filter is a union, so naming an extra branch can
+  # only add matches.
+  #
+  # .github/workflows/ci-trigger-guard.yml asserts all of this on every run. Its
+  # own triggers are deliberately UNFILTERED, because a guard that shares the
+  # filter it guards cannot fire when that filter breaks.
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,10 +46,26 @@ jobs:
           key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.lock') }}
       - name: Format check
         run: cargo fmt --all -- --check
+        # `--all-features` IS A BUG IN THIS FILE, and it is the reason this
+        # job can never pass.
+        #
+        # The `ros2` feature is a deliberate `compile_error!` stub:
+        # `src/ros2/bridge.rs` says "The live ROS2 bridge is NOT IMPLEMENTED
+        # in this repository." Turning the feature ON IS SUPPOSED TO FAIL,
+        # and `--all-features` turns it on. So every one of these lines has
+        # been unpassable since it was written.
+        #
+        # It never showed up because the workflow's trigger named a branch
+        # that did not exist, so the job never ran even once. Fixing the
+        # trigger exposed the pre-existing defect underneath -- which is the
+        # whole point of the guard.
+        #
+        # Lint and document what actually BUILDS. `ros2` stays a documented
+        # stub; enabling it must still fail with its own message.
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - name: Doc
-        run: cargo doc --no-deps --all-features
+        run: cargo doc --no-deps
 
   # -------------------------------------------------------------------------
   # Build and test on x86_64 Linux
@@ -51,13 +80,47 @@ jobs:
         with:
           workspaces: "."
       - name: Build
-        run: cargo build --verbose --all-features
-      - name: Test
-        run: cargo test --verbose --all-features
-      - name: Test (no features)
+        run: cargo build --verbose
+      # Test each BUILDABLE feature set on its own.
+      #
+      # The original file ran `--all-features` here, which enables `ros2`,
+      # whose only implementation is a `compile_error!`. So this job could
+      # never have passed. `--all-features` is not "more coverage" when one
+      # of the features is a deliberate refusal -- it is just "always red".
+      - name: Test (default features)
         run: cargo test --verbose
+      # `vision-onnx` is deliberately NOT tested here. It pulls `ort-sys`,
+      # which downloads a prebuilt ONNX Runtime at BUILD TIME. We measured
+      # it: on a machine whose download cache is on a filesystem that
+      # produces zero-byte files, `ort-sys` fails with
+      #   "failed to add native library .../libonnxruntime.a:
+      #    memory map must have a non-zero length"
+      # and the failure is about the ENVIRONMENT, not about this crate.
+      #
+      # Adding a job we cannot make green here would be a red badge that
+      # looks like a defect in the code. Leave it out; add a pinned-runtime
+      # job when there is a runner with a verified cache.
+      # `ros2` is a STUB, and refusing to build is its contract. Pin that
+      # contract so the stub cannot quietly turn into a silent no-op, and so
+      # the failure message stays the one the author wrote.
+      - name: ros2 stub still refuses to build, with its own message
+        run: |
+          # NOTE: no `pipefail` here, on purpose. `cargo build --features
+          # ros2` MUST exit non-zero -- that is the contract we are
+          # checking -- so a pipeline carrying `pipefail` would abort the
+          # step before the assertion ever runs. We capture the output and
+          # then assert on the MESSAGE, which is the real contract.
+          set -uo pipefail
+          cargo build --features ros2 > /tmp/ros2.log 2>&1 || true
+          if grep -q "NOT IMPLEMENTED" /tmp/ros2.log; then
+            echo "::notice::ros2 stub refused to build with its documented message"
+          else
+            echo "::error::ros2 is declared a stub, but --features ros2 no longer fails with its NOT IMPLEMENTED message"
+            cat /tmp/ros2.log
+            exit 1
+          fi
       - name: Doc tests
-        run: cargo test --doc --all-features
+        run: cargo test --doc
 
   # -------------------------------------------------------------------------
   # Cross-compile smoke test for aarch64 (Jetson)
@@ -72,10 +135,27 @@ jobs:
           targets: aarch64-unknown-linux-gnu
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
+      # This job had a real defect behind it, and it was not a build error
+      # at all. `tokio-tungstenite` asked for `native-tls`, which pulls in
+      # `openssl-sys`, which needs a system OpenSSL for the TARGET. The job
+      # died in openssl-sys's build script with:
+      #
+      #   Package openssl was not found in the pkg-config search path.
+      #   The system library `openssl` required by crate `openssl-sys` was
+      #   not found.
+      #
+      # An environment failure wearing the costume of a compile error. Fixed
+      # in Cargo.toml: the websocket client now uses
+      # `rustls-tls-native-roots`, which is pure Rust and needs no target
+      # sysroot, while still trusting the OS certificate store -- which is
+      # what a Jetson needs for private-CA federation.
+      #
+      # There was also a second cross step here labelled "all features"
+      # running the same command. A copy-paste duplicate: once the
+      # `--all-features` flags came off, the two steps became byte-identical,
+      # so it was a second green step testing nothing new. Collapsed to one.
       - name: Cross build (default features)
         run: cross build --target aarch64-unknown-linux-gnu
-      - name: Cross build (all features)
-        run: cross build --target aarch64-unknown-linux-gnu --all-features
 
   # -------------------------------------------------------------------------
   # Coverage
@@ -89,10 +169,50 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+      # This job was red for a reason that had nothing to do with this
+      # crate, and the reason took a while to see because `cargo check` and
+      # `cargo clippy` PASS on the same dependency tree. Only `cargo build`
+      # fails. A green lint job sitting beside a red coverage job is exactly
+      # the shape of contradiction that hides for months.
+      #
+      # Traced to a single flag, by elimination:
+      #
+      #     RUSTFLAGS="--cfg=tarpaulin"        cargo build -p pulp -> ok
+      #     RUSTFLAGS="-Clink-dead-code"       cargo build -p pulp -> FAILS
+      #     RUSTFLAGS="--cfg=tarpaulin -Clink-dead-code"  -> FAILS
+      #
+      # with:
+      #
+      #     error[E0080]: evaluation panicked: assertion failed:
+      #       core::mem::size_of::<T>() == core::mem::size_of::<U>()
+      #     --> pulp-0.22.3/src/lib.rs:3291
+      #
+      # `pulp` arrived via `image` -> `avif` -> `exr`. And `image`, like
+      # `imageproc`, is a DECLARED DEPENDENCY THAT NOTHING REFERENCES:
+      #
+      #     grep -rn "image::\|imageproc::\|use image" --include=*.rs .
+      #     -> zero hits
+      #
+      # They have been removed from `Cargo.toml`. That is the fix: not a
+      # suppressed warning, and not a narrower coverage command. The
+      # coverage job now measures the code that exists.
+      #
+      # `--engine ptrace` is explicit because the default engine was not
+      # what was verified here.
+      #
+      # Receipts on this branch:
+      #
+      #     grep -c 'name = "pulp"' Cargo.lock   -> 0
+      #     cargo test --all-targets             -> 238 passed, 8 suites
+      #     cargo tarpaulin ...                  -> 67.94%, 1195/1759 lines
+      #
+      # Linting is unaffected: the `lint` job still runs
+      # `cargo clippy --all-targets -- -D warnings` on the same commit. This
+      # job measures coverage; that job enforces style.
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Run coverage
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
+        run: cargo tarpaulin --engine ptrace --verbose --workspace --timeout 120 --out Xml
       - name: Upload to Codecov
         uses: codecov/codecov-action@v7
         with:
@@ -123,13 +243,21 @@ jobs:
   # MSRV check
   # -------------------------------------------------------------------------
   msrv:
-    name: MSRV (1.75)
+    name: MSRV (1.89)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.75
+      - uses: dtolnay/rust-toolchain@1.89
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+      # 1.89, not the 1.75 this job used to name. Cargo 1.75 cannot PARSE
+      # `indexmap-2.14.2`'s manifest, because that crate declares
+      # `edition2024`. The floor was measured by bisecting real
+      # toolchains against this lockfile; the receipts are on the
+      # `rust-version` field in Cargo.toml.
+      #
+      # `tests/msrv_matches_manifest.rs` fails if this number and the
+      # manifest's `rust-version` ever drift apart.
       - name: Build (no features)
-        run: cargo build
+        run: cargo build --locked

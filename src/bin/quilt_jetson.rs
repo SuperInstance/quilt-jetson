@@ -125,7 +125,11 @@ async fn serve(
 ) -> anyhow::Result<()> {
     let sheet_def = parse_sheet_file(&sheet)
         .map_err(|e| anyhow::anyhow!("could not load sheet {}: {e}", sheet.display()))?;
-    info!("loaded sheet: {} ({} cells)", sheet_def.id, sheet_def.cells.len());
+    info!(
+        "loaded sheet: {} ({} cells)",
+        sheet_def.id,
+        sheet_def.cells.len()
+    );
 
     let config = EngineConfig {
         tracing: trace,
@@ -138,12 +142,12 @@ async fn serve(
         ..Default::default()
     };
 
-    let engine = QuiltEngine::with_sheet(
-        sheet_def.id.clone(),
-        config,
-        sheet_def,
-    )?;
-    info!("engine ready: id={} cells={}", engine.id(), engine.list_ids().len());
+    let engine = QuiltEngine::with_sheet(sheet_def.id.clone(), config, sheet_def)?;
+    info!(
+        "engine ready: id={} cells={}",
+        engine.id(),
+        engine.list_ids().len()
+    );
 
     let addr: std::net::SocketAddr = format!("{bind}:{port}").parse()?;
     quilt_jetson::web::serve(engine, quilt_jetson::web::WebConfig { bind: addr }).await?;
@@ -152,11 +156,7 @@ async fn serve(
 
 async fn eval_cell(sheet: PathBuf, cell: String) -> anyhow::Result<()> {
     let sheet_def = parse_sheet_file(&sheet)?;
-    let engine = QuiltEngine::with_sheet(
-        sheet_def.id.clone(),
-        EngineConfig::default(),
-        sheet_def,
-    )?;
+    let engine = QuiltEngine::with_sheet(sheet_def.id.clone(), EngineConfig::default(), sheet_def)?;
     let value = engine
         .get(&cell, quilt_jetson::CallerContext::default())
         .await?;
@@ -167,11 +167,7 @@ async fn eval_cell(sheet: PathBuf, cell: String) -> anyhow::Result<()> {
 
 async fn print_meta(sheet: PathBuf) -> anyhow::Result<()> {
     let sheet_def = parse_sheet_file(&sheet)?;
-    let engine = QuiltEngine::with_sheet(
-        sheet_def.id.clone(),
-        EngineConfig::default(),
-        sheet_def,
-    )?;
+    let engine = QuiltEngine::with_sheet(sheet_def.id.clone(), EngineConfig::default(), sheet_def)?;
     let meta = serde_json::json!({
         "id": engine.id(),
         "cell_count": engine.list_ids().len(),

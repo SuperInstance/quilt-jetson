@@ -1,0 +1,18 @@
+# Branch names a workflow is allowed to reference BEFORE the branch exists.
+#
+# A `branches:` filter is a union: naming several branches adds matches, it never
+# removes them. So naming a branch that does not exist yet is harmless *provided
+# the default branch is also named* -- the default branch is what gates CI, and
+# it is the one omission that makes a workflow unfireable.
+#
+# That is the whole reason this file exists. Without it, a workflow naming only
+# a nonexistent branch is a green badge over zero jobs, and that is how
+# quilt-jetson's CI spent its entire history: `branches: [main]` in a repository
+# whose default branch is `master`.
+#
+# scripts/ci_trigger_guard.py fails on any phantom branch that is not declared
+# here. Keep this list short, and justify each entry.
+#
+# 38% of this account's repositories default to `main` and the rest to `master`,
+# so a workflow that names only one of them is dead in a third of the fleet.
+main

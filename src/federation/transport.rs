@@ -185,7 +185,10 @@ impl FederationClient {
             // remote instance and forward events. For now, we
             // log a debug message so the caller can see what
             // would have been subscribed.
-            debug!("[federation] would subscribe to {}", uri_clone.canonical_uri());
+            debug!(
+                "[federation] would subscribe to {}",
+                uri_clone.canonical_uri()
+            );
             // Send a one-shot fetch so the cell is not empty.
             #[allow(unreachable_code)]
             {
