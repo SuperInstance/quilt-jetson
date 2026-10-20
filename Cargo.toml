@@ -92,7 +92,7 @@ rumqttc = "0.24"
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "json", "macros"] }
 
 # Math — sensor fusion, vision, transforms
-nalgebra = { version = "0.32", features = ["serde-serialize"] }
+nalgebra = { version = "0.35", features = ["serde-serialize"] }
 
 # `image` and `imageproc` WERE HERE, and nothing used them.
 #
